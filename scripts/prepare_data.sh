@@ -1,7 +1,6 @@
 
 CARS196_ROOT='data/cars196/'
-CARS196_DATA='199pRuHUlDdtnvOQm-drmj-20P4GrN43T'
-
+CARS196_DATA='1xWSUMQIME3yqK8_NAdoBzYu8kO8bk4gq'
 
 if [[ ! -d "${CARS196_ROOT}" ]]; then
     mkdir -p data/cars196/
