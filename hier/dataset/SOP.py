@@ -11,7 +11,7 @@ class SOP(BaseDataset):
             self.classes = range(11318,22634)  
 
         BaseDataset.__init__(self, self.root, self.mode, self.transform)
-        metadata = open(os.path.join(self.root, 'Ebay_train.txt' if self.classes == range(0, 11318) else 'Ebay_test.txt'))
+        metadata = open(os.path.join(self.root, 'Info_files' ,'Ebay_train.txt' if self.classes == range(0, 11318) else 'Ebay_test.txt'))
         for i, (image_id, class_id, _, path) in enumerate(map(str.split, metadata)):
             if i > 0:
                 if int(class_id)-1 in self.classes:
