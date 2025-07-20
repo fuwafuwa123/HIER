@@ -140,7 +140,7 @@ def train_one_epoch(model, cluster_loss, sup_metric_loss, get_emb_s, data_loader
         
         x = torch.cat([im.cuda(non_blocking=True) for im in x])
         y = y.cuda(non_blocking=True).repeat(args.global_crops_number)
-        with torch.cuda.autocast(fp16_scaler is not None):
+        with torch.cuda.amp.autocast(fp16_scaler is not None):
             z = model(x) 
 
             if args.loss == 'SupCon' and args.IPC > 0:
