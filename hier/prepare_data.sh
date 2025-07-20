@@ -4,7 +4,7 @@ CARS196_DATA='1xWSUMQIME3yqK8_NAdoBzYu8kO8bk4gq'
 
 
 if [[ ! -d "${CARS196_ROOT}" ]]; then
-    mkdir -p data/cars196/
+    mkdir -p data/
     pushd data/cars196/
     echo "Downloading Cars196 data-set..."
     gdown "${CARS196_DATA}" -O cars196.tar
