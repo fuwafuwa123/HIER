@@ -63,6 +63,8 @@ def create_get_emb_function(model_name, model_obj, dataset_class, data_path, hyp
     """
     Create a get_emb function for the evaluate function from helpers
     """
+
+    
     # Set up data transforms
     if model_name.startswith("vit"):
         mean_std = (0.5, 0.5, 0.5), (0.5, 0.5, 0.5)
@@ -201,6 +203,9 @@ def visualize_top_k_results(query_embeddings, query_labels, gallery_embeddings, 
     
     # Compute similarities
     similarities = torch.mm(query_emb, gallery_emb.t()).squeeze()
+    
+    # Remove self-similarity (set query image similarity to -inf)
+    similarities[query_idx] = float('-inf')
     
     # Get top-k indices
     top_k_scores, top_k_indices = torch.topk(similarities, top_k)
