@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Evaluation script to load a trained checkpoint and compute recall and mAP metrics
+Clean evaluation script for HIER model with visualization
 """
 
 import argparse
@@ -16,26 +16,27 @@ import matplotlib.patches as patches
 from pathlib import Path
 from PIL import Image
 
-
 from models.model import init_model
 from dataset import CUBirds, SOP, Cars
 from dataset.Inshop import Inshop_Dataset
 from helpers import get_emb, evaluate
 from utils import compute_map, fix_random_seeds
-import utils
 
 def get_args_parser():
-    parser = argparse.ArgumentParser('Evaluation', add_help=False)
+    parser = argparse.ArgumentParser('HIER Evaluation', add_help=False)
     
     # Model parameters
     parser.add_argument('--model', default='resnet50', type=str,
         choices=['resnet50', 'deit_small_distilled_patch16_224', 'vit_small_patch16_224', 'dino_vits16'],
-        help="Model architecture (resnet50, deit_small_distilled_patch16_224, vit_small_patch16_224, dino_vits16)")
+        help="Model architecture")
     parser.add_argument('--emb', default=128, type=int, help="Embedding dimension")
-    parser.add_argument('--hyp_c', type=float, default=0.1, help="Hyperbolic curvature (0 for Euclidean)")
+    parser.add_argument('--hyp_c', type=float, default=0.1, help="Hyperbolic curvature")
     parser.add_argument('--clip_r', type=float, default=2.3, help="Clip radius for hyperbolic space")
     parser.add_argument('--use_lastnorm', type=bool, default=True, help="Use last normalization")
     parser.add_argument('--bn_freeze', type=bool, default=True, help="Freeze batch norm")
+    parser.add_argument('--pool', default='token', type=str, choices=['token', 'avg'], help='ViT Pooling')
+    parser.add_argument('--resize_size', type=int, default=256, help='Resize size for images')
+    parser.add_argument('--crop_size', type=int, default=224, help='Crop size for images')
     
     # Dataset parameters
     parser.add_argument('--dataset', default='SOP', type=str, 
@@ -44,7 +45,7 @@ def get_args_parser():
         help='Path to the dataset')
     
     # Evaluation parameters
-    parser.add_argument('--checkpoint', type=str, help='Path to checkpoint file (optional, will use pretrained model if not provided)')
+    parser.add_argument('--checkpoint', type=str, help='Path to checkpoint file')
     parser.add_argument('--batch_size', default=100, type=int, help='Evaluation batch size')
     parser.add_argument('--num_workers', default=4, type=int, help='Number of data loading workers')
     parser.add_argument('--k_values', nargs='+', type=int, default=[1, 2, 4, 8], 
@@ -61,11 +62,7 @@ def get_args_parser():
     return parser
 
 def create_get_emb_function(model_name, model_obj, dataset_class, data_path, hyp_c):
-    """
-    Create a get_emb function for the evaluate function from helpers
-    """
-
-    
+    """Create a get_emb function for evaluation"""
     # Set up data transforms
     if model_name.startswith("vit"):
         mean_std = (0.5, 0.5, 0.5), (0.5, 0.5, 0.5)
@@ -83,20 +80,14 @@ def create_get_emb_function(model_name, model_obj, dataset_class, data_path, hyp
     return get_emb_func
 
 def compute_metrics(query_embeddings, query_labels, gallery_embeddings=None, gallery_labels=None, k_values=[1, 2, 4, 8]):
-    """
-    Compute recall@K and mAP metrics
-    """
+    """Compute recall@K and mAP metrics"""
     if gallery_embeddings is not None:
-        # For Inshop dataset (query-gallery setup)
         return compute_inshop_metrics(query_embeddings, query_labels, gallery_embeddings, gallery_labels, k_values)
     else:
-        # For other datasets (single evaluation set)
         return compute_single_set_metrics(query_embeddings, query_labels, k_values)
 
 def compute_inshop_metrics(query_embeddings, query_labels, gallery_embeddings, gallery_labels, k_values):
-    """
-    Compute metrics for Inshop dataset (query-gallery setup)
-    """
+    """Compute metrics for Inshop dataset (query-gallery setup)"""
     print("Computing metrics for Inshop dataset...")
     
     # Normalize embeddings
@@ -120,7 +111,6 @@ def compute_inshop_metrics(query_embeddings, query_labels, gallery_embeddings, g
         correct = 0
         total = 0
         for i, query_label in enumerate(query_labels):
-            # Find matching gallery images
             matches = (gallery_labels[rankings[i, :k]] == query_label).sum()
             if matches > 0:
                 correct += 1
@@ -128,10 +118,8 @@ def compute_inshop_metrics(query_embeddings, query_labels, gallery_embeddings, g
         recalls[f'R@{k}'] = (correct / total) * 100 if total > 0 else 0
     
     # Compute mAP
-    # For Inshop, we need to create ground truth structure
     gnd = []
     for i, query_label in enumerate(query_labels):
-        # Find all gallery images with same label
         positive_indices = np.where(gallery_labels == query_label)[0]
         gnd.append({'ok': positive_indices, 'junk': []})
     
@@ -140,9 +128,7 @@ def compute_inshop_metrics(query_embeddings, query_labels, gallery_embeddings, g
     return recalls, map_score, aps
 
 def compute_single_set_metrics(embeddings, labels, k_values):
-    """
-    Compute metrics for datasets with single evaluation set
-    """
+    """Compute metrics for datasets with single evaluation set"""
     print("Computing metrics for single evaluation set...")
     
     # Normalize embeddings
@@ -167,7 +153,6 @@ def compute_single_set_metrics(embeddings, labels, k_values):
         correct = 0
         total = 0
         for i, label in enumerate(labels):
-            # Find matching images (excluding self)
             matches = (labels[rankings[i, :k]] == label).sum()
             if matches > 0:
                 correct += 1
@@ -177,134 +162,156 @@ def compute_single_set_metrics(embeddings, labels, k_values):
     # Compute mAP
     gnd = []
     for i, label in enumerate(labels):
-        # Find all images with same label (excluding self)
         positive_indices = np.where(labels == label)[0]
-        positive_indices = positive_indices[positive_indices != i]  # Remove self
-        gnd.append({'ok': positive_indices, 'junk': [i]})  # Self is junk
+        positive_indices = positive_indices[positive_indices != i]
+        gnd.append({'ok': positive_indices, 'junk': [i]})
     
     map_score, aps, pr, prs = compute_map(rankings.T, gnd, kappas=k_values)
     
     return recalls, map_score, aps
 
-def visualize_top_k_results(query_embeddings, query_labels, gallery_embeddings, gallery_labels, 
-                           query_indices, gallery_indices, dataset_class, data_path, 
-                           query_idx=0, top_k=5, save_dir=None):
-    """
-    Visualize top-k retrieval results for a given query
-    """
-    print(f"Visualizing top-{top_k} results for query index {query_idx}")
+def get_embeddings_and_paths(model, dataset_class, data_path, ds_type="eval"):
+    """Extract embeddings and image paths from the dataset"""
+    print(f"Extracting embeddings for {ds_type} set...")
     
-    # Get query embedding and label
-    query_emb = query_embeddings[query_idx:query_idx+1]
-    query_label = query_labels[query_idx]
+    # Set up data transforms
+    if model.module.__class__.__name__.startswith("ViT"):
+        mean_std = (0.5, 0.5, 0.5), (0.5, 0.5, 0.5)
+    else:
+        mean_std = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
     
+    # Get embeddings using existing function
+    embeddings, labels, indices = get_emb(
+        model=model, ds=dataset_class, path=data_path, 
+        mean_std=mean_std, world_size=1, resize=256, crop=224, ds_type=ds_type
+    )
+    
+    # Get image paths
+    dataset_instance = dataset_class(data_path, ds_type, None)
+    image_paths = dataset_instance.im_paths if hasattr(dataset_instance, 'im_paths') else []
+    
+    print(f"Extracted embeddings shape: {embeddings.shape}")
+    return embeddings, labels, image_paths
+
+def find_top_k_similar(query_embedding, gallery_embeddings, query_idx, k=5):
+    """Find top-k most similar embeddings using cosine similarity"""
     # Normalize embeddings
-    query_emb = F.normalize(query_emb, p=2, dim=1)
-    gallery_emb = F.normalize(gallery_embeddings, p=2, dim=1)
+    query_embedding = F.normalize(query_embedding, p=2, dim=1)
+    gallery_embeddings = F.normalize(gallery_embeddings, p=2, dim=1)
     
-    # Compute similarities
-    similarities = torch.mm(query_emb, gallery_emb.t()).squeeze()
+    # Compute cosine similarity
+    similarity = torch.mm(query_embedding, gallery_embeddings.t()).squeeze()
     
-    # Remove self-similarity (set query image similarity to -inf)
-    similarities[query_idx] = float('-inf')
+    # Remove self-similarity
+    similarity[query_idx] = float('-inf')
     
     # Get top-k indices
-    top_k_scores, top_k_indices = torch.topk(similarities, top_k)
+    top_k_scores, top_k_indices = torch.topk(similarity, k=k)
+    
+    return top_k_scores, top_k_indices
+
+def visualize_top_k_results(query_image_path, top_k_image_paths, top_k_scores, top_k_labels, 
+                           query_label, save_path=None):
+    """Visualize query image and top-k similar images"""
+    fig, axes = plt.subplots(1, len(top_k_image_paths) + 1, figsize=(3 * (len(top_k_image_paths) + 1), 4))
+    
+    # Load and display query image
+    query_img = Image.open(query_image_path).convert('RGB')
+    axes[0].imshow(query_img)
+    axes[0].set_title(f'Query (Class {query_label})', fontsize=10)
+    axes[0].axis('off')
+    
+    # Add blue border for query image
+    rect = patches.Rectangle((0, 0), query_img.width, query_img.height, 
+                           linewidth=3, edgecolor='blue', facecolor='none')
+    axes[0].add_patch(rect)
+    
+    # Load and display top-k similar images
+    for i, (img_path, score, label) in enumerate(zip(top_k_image_paths, top_k_scores, top_k_labels)):
+        img = Image.open(img_path).convert('RGB')
+        axes[i+1].imshow(img)
+        
+        is_correct = (label == query_label)
+        title = f'#{i+1} (Class {label})'
+        
+        axes[i+1].set_title(title, fontsize=10)
+        axes[i+1].axis('off')
+        
+        # Add colored border
+        color = 'green' if is_correct else 'red'
+        rect = patches.Rectangle((0, 0), img.width, img.height, 
+                               linewidth=3, edgecolor=color, facecolor='none')
+        axes[i+1].add_patch(rect)
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"Visualization saved to: {save_path}")
+    
+    plt.close(fig)
+
+def visualize_similar_images(model, dataset_class, data_path, query_index=0, top_k=5, save_dir=None):
+    """Main function to visualize top-k similar images"""
+    print(f"Visualizing top-{top_k} results for query index {query_index}")
+    
+    # Get embeddings and paths
+    embeddings, labels, image_paths = get_embeddings_and_paths(model, dataset_class, data_path, "eval")
+    
+    # Check query index
+    if query_index >= len(embeddings):
+        print(f"Query index {query_index} is out of range. Using index 0.")
+        query_index = 0
+    
+    # Get query information
+    query_embedding = embeddings[query_index:query_index+1]
+    query_label = labels[query_index]
+    query_image_path = image_paths[query_index] if query_index < len(image_paths) else f"Image {query_index}"
+    
+    print(f"Query image: {query_image_path}")
+    print(f"Query label: {query_label}")
+    
+    # Find top-k similar images
+    top_k_scores, top_k_indices = find_top_k_similar(query_embedding, embeddings, query_index, k=top_k)
     
     # Convert to numpy
     top_k_scores = top_k_scores.cpu().numpy()
     top_k_indices = top_k_indices.cpu().numpy()
     
-    # Load images
-    images = []
-    labels = []
-    scores = []
-    
-    # Load query image
-    if dataset_class == Inshop_Dataset:
-        query_dataset = dataset_class(data_path, "query", None)
-        query_img_path = query_dataset.im_paths[query_idx]
-    else:
-        eval_dataset = dataset_class(data_path, "eval", None)
-        query_img_path = eval_dataset.im_paths[query_idx]
-    
-    query_img = Image.open(query_img_path).convert('RGB')
-    images.append(query_img)
-    labels.append(f"Query (Class {query_label})")
-    scores.append(1.0)
-    
-    # Load top-k gallery images
-    for i, (idx, score) in enumerate(zip(top_k_indices, top_k_scores)):
-        if dataset_class == Inshop_Dataset:
-            gallery_dataset = dataset_class(data_path, "gallery", None)
-            img_path = gallery_dataset.im_paths[idx]
+    # Get image paths and labels for top-k results
+    top_k_image_paths = []
+    top_k_labels = []
+    for idx in top_k_indices:
+        if idx < len(image_paths):
+            top_k_image_paths.append(image_paths[idx])
         else:
-            eval_dataset = dataset_class(data_path, "eval", None)
-            img_path = eval_dataset.im_paths[idx]
-        
-        img = Image.open(img_path).convert('RGB')
-        images.append(img)
-        
-        gallery_label = gallery_labels[idx]
-        is_correct = (gallery_label == query_label)
-        label_text = f"#{i+1} (Class {gallery_label})"
-        if is_correct:
-            label_text += " ✓"
-        else:
-            label_text += " ✗"
-        
-        labels.append(label_text)
-        scores.append(score)
-    
-    # Create visualization
-    fig, axes = plt.subplots(1, top_k + 1, figsize=(3 * (top_k + 1), 4))
-    if top_k == 0:
-        axes = [axes]
-    
-    for i, (img, label, score) in enumerate(zip(images, labels, scores)):
-        ax = axes[i]
-        ax.imshow(img)
-        ax.set_title(f"{label}", fontsize=10)
-        ax.axis('off')
-        
-        # Add colored border based on correctness
-        if i == 0:  # Query image
-            color = 'blue'
-            linewidth = 3
-        elif gallery_labels[top_k_indices[i-1]] == query_label:  # Correct match
-            color = 'green'
-            linewidth = 2
-        else:  # Incorrect match
-            color = 'red'
-            linewidth = 2
-        
-        rect = patches.Rectangle((0, 0), img.width, img.height, 
-                               linewidth=linewidth, edgecolor=color, facecolor='none')
-        ax.add_patch(rect)
-    
-    plt.tight_layout()
-    
-    # Save the visualization
-    if save_dir:
-        Path(save_dir).mkdir(parents=True, exist_ok=True)
-        save_path = os.path.join(save_dir, f'visualization_query_{query_idx}_top{top_k}.png')
-    else:
-        save_path = f'visualization_query_{query_idx}_top{top_k}.png'
-    
-    plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    print(f"Visualization saved to: {save_path}")
-    
-    # Close the figure to free memory
-    plt.close(fig)
+            top_k_image_paths.append(f"Image {idx}")
+        top_k_labels.append(labels[idx])
     
     # Print results
-    print(f"\nQuery Class: {query_label}")
-    print("Top-k Results:")
-    for i, (idx, score) in enumerate(zip(top_k_indices, top_k_scores)):
-        gallery_label = gallery_labels[idx]
-        is_correct = (gallery_label == query_label)
+    print(f"\nTop {top_k} similar images:")
+    for i, (idx, score, label) in enumerate(zip(top_k_indices, top_k_scores, top_k_labels)):
+        img_path = top_k_image_paths[i]
+        is_correct = (label == query_label)
         status = "✓" if is_correct else "✗"
-        print(f"  #{i+1}: Class {gallery_label} {status}")
+        print(f"  {i+1}. Image {idx}: {img_path}")
+        print(f"     Label: {label} {status}, Similarity Score: {score:.3f}")
+    
+    # Visualize results
+    if image_paths and all(os.path.exists(path) for path in [query_image_path] + top_k_image_paths):
+        print("\nGenerating visualization...")
+        
+        # Determine save path
+        if save_dir:
+            Path(save_dir).mkdir(parents=True, exist_ok=True)
+            save_path = os.path.join(save_dir, f'viz_query_{query_index}_top{top_k}.png')
+        else:
+            save_path = f'viz_query_{query_index}_top{top_k}.png'
+        
+        visualize_top_k_results(query_image_path, top_k_image_paths, top_k_scores, 
+                               top_k_labels, query_label, save_path)
+    else:
+        print("\nCannot visualize: Some image paths are not valid or images don't exist")
 
 def main():
     parser = argparse.ArgumentParser('HIER Evaluation', parents=[get_args_parser()])
@@ -325,7 +332,7 @@ def main():
     model = init_model(args)
     model.eval()
     
-    # Load checkpoint if provided, otherwise use pretrained model
+    # Load checkpoint if provided
     if args.checkpoint:
         print(f"Loading checkpoint: {args.checkpoint}")
         if os.path.isfile(args.checkpoint):
@@ -333,14 +340,11 @@ def main():
             
             # Handle different checkpoint formats
             if 'stduent' in checkpoint:
-                # Training checkpoint format
                 model.load_state_dict(checkpoint['stduent'])
                 print(f"Loaded checkpoint from epoch {checkpoint.get('epoch', 'unknown')}")
             elif 'model_state_dict' in checkpoint:
-                # Standard format
                 model.load_state_dict(checkpoint['model_state_dict'])
             else:
-                # Assume it's just the model state dict
                 model.load_state_dict(checkpoint)
             
             print("Checkpoint loaded successfully!")
@@ -362,7 +366,7 @@ def main():
     # Use the existing evaluate function from helpers
     recall_at_1 = evaluate(get_emb_func, args.dataset, args.hyp_c)
     
-    # For detailed metrics, we still need to get embeddings
+    # Get embeddings for detailed metrics
     if args.dataset == "Inshop":
         query_embeddings, query_labels, query_indices = get_emb_func("query")
         gallery_embeddings, gallery_labels, gallery_indices = get_emb_func("gallery")
@@ -415,29 +419,12 @@ def main():
     print(f"\nResults saved to: {output_file}")
     
     # Visualization
-    print(f"Visualization flag: {args.visualize}")
     if args.visualize:
         print("\n" + "="*50)
         print("VISUALIZATION")
         print("="*50)
-        
-        # Get dataset instances for image paths
-        if args.dataset == "Inshop":
-            query_dataset = dataset_class(args.data_path, "query", None)
-            gallery_dataset = dataset_class(args.data_path, "gallery", None)
-            query_indices = list(range(len(query_dataset)))
-            gallery_indices = list(range(len(gallery_dataset)))
-        else:
-            eval_dataset = dataset_class(args.data_path, "eval", None)
-            query_indices = list(range(len(eval_dataset)))
-            gallery_indices = list(range(len(eval_dataset)))
-        
-        # Visualize top-k results
-        visualize_top_k_results(
-            query_embeddings, query_labels, gallery_embeddings, gallery_labels,
-            query_indices, gallery_indices, dataset_class, args.data_path,
-            query_idx=args.query_index, top_k=args.top_k_viz, save_dir=args.save_viz_dir
-        )
+        visualize_similar_images(model, dataset_class, args.data_path, 
+                               args.query_index, args.top_k_viz, args.save_viz_dir)
 
 if __name__ == "__main__":
     main() 

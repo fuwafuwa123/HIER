@@ -101,7 +101,6 @@ def get_args_parser():
     parser.add_argument('--num_hproxies', default=512, type=int, help="""Dimensionality of output for [CLS] token.""")
     parser.add_argument('--lambda1', default=1.0, type=float, help="""loss weight for metric learning
         loss over [CLS] tokens (Default: 1.0)""")
-    parser.add_argument('--lambda2', default=1.0, type=float, help="""loss weight for clustering loss over [CLS] tokens (Default: 1.0)""")
     parser.add_argument('--mrg', type=float, default=0.1)
     
     # Misc
@@ -121,7 +120,7 @@ def get_args_parser():
 
     return parser
 
-def train_one_epoch(model, cluster_loss, sup_metric_loss, get_emb_s, data_loader, optimizer, 
+def train_one_epoch(model, sup_metric_loss, get_emb_s, data_loader, optimizer, 
                     lr_schedule, epoch, fp16_scaler, args):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Epoch: [{}/{}]'.format(epoch, args.epochs)
@@ -259,7 +258,6 @@ if __name__ == "__main__":
 
     model = init_model(args)
     model = nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], broadcast_buffers=True, find_unused_parameters=(args.model == 'bn_inception'))
-    cluster_loss = HIERLoss(args.num_hproxies, args.emb, mrg=args.mrg, hyp_c=args.hyp_c, clip_r=args.clip_r).cuda()
     if args.loss == 'MS':
         sup_metric_loss = MSLoss_Angle().cuda()
     elif args.loss == 'PA':
@@ -273,7 +271,7 @@ if __name__ == "__main__":
     elif args.loss == 'Triplet':
         sup_metric_loss = TripletLoss_Angle(margin=0.01).cuda()
     
-    params_groups = utils.get_params_groups(model, sup_metric_loss, cluster_loss, fc_lr_scale=args.fc_lr_scale, weight_decay=args.weight_decay)
+    params_groups = utils.get_params_groups(model, sup_metric_loss, fc_lr_scale=args.fc_lr_scale, weight_decay=args.weight_decay)
     if args.optimizer == "adamw":
         optimizer = torch.optim.AdamW(params_groups, eps=1e-4 if args.use_fp16 else 1e-8)  # to use with ViTs
     elif args.optimizer == "adamp":
@@ -311,7 +309,7 @@ if __name__ == "__main__":
         if sampler is not None and args.IPC > 0:
             sampler.set_epoch(epoch)
         # ============ training one epoch ... ============
-        train_stats = train_one_epoch(model, cluster_loss, sup_metric_loss, get_emb_s, data_loader, optimizer, 
+        train_stats = train_one_epoch(model, sup_metric_loss, get_emb_s, data_loader, optimizer, 
                                       lr_schedule, epoch, fp16_scaler, args)
 
         # ============ writing logs ... ============
