@@ -44,7 +44,7 @@ def get_args_parser():
         help='Path to the dataset')
     
     # Evaluation parameters
-    parser.add_argument('--checkpoint', required=True, type=str, help='Path to checkpoint file')
+    parser.add_argument('--checkpoint', type=str, help='Path to checkpoint file (optional, will use pretrained model if not provided)')
     parser.add_argument('--batch_size', default=100, type=int, help='Evaluation batch size')
     parser.add_argument('--num_workers', default=4, type=int, help='Number of data loading workers')
     parser.add_argument('--k_values', nargs='+', type=int, default=[1, 2, 4, 8], 
@@ -56,7 +56,6 @@ def get_args_parser():
     parser.add_argument('--visualize', action='store_true', help='Visualize top-k results')
     parser.add_argument('--query_index', default=0, type=int, help='Index of query image to visualize')
     parser.add_argument('--top_k_viz', default=5, type=int, help='Number of top results to visualize')
-    parser.add_argument('--save_viz', action='store_true', help='Save visualization images')
     
     return parser
 
@@ -186,7 +185,7 @@ def compute_single_set_metrics(embeddings, labels, k_values):
 
 def visualize_top_k_results(query_embeddings, query_labels, gallery_embeddings, gallery_labels, 
                            query_indices, gallery_indices, dataset_class, data_path, 
-                           query_idx=0, top_k=5, save_path=None):
+                           query_idx=0, top_k=5):
     """
     Visualize top-k retrieval results for a given query
     """
@@ -278,11 +277,6 @@ def visualize_top_k_results(query_embeddings, query_labels, gallery_embeddings, 
         ax.add_patch(rect)
     
     plt.tight_layout()
-    
-    if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        print(f"Visualization saved to: {save_path}")
-    
     plt.show()
     
     # Print results
@@ -313,27 +307,30 @@ def main():
     model = init_model(args)
     model.eval()
     
-    # Load checkpoint
-    print(f"Loading checkpoint: {args.checkpoint}")
-    if os.path.isfile(args.checkpoint):
-        checkpoint = torch.load(args.checkpoint, map_location=device)
-        
-        # Handle different checkpoint formats
-        if 'stduent' in checkpoint:
-            # Training checkpoint format
-            model.load_state_dict(checkpoint['stduent'])
-            print(f"Loaded checkpoint from epoch {checkpoint.get('epoch', 'unknown')}")
-        elif 'model_state_dict' in checkpoint:
-            # Standard format
-            model.load_state_dict(checkpoint['model_state_dict'])
+    # Load checkpoint if provided, otherwise use pretrained model
+    if args.checkpoint:
+        print(f"Loading checkpoint: {args.checkpoint}")
+        if os.path.isfile(args.checkpoint):
+            checkpoint = torch.load(args.checkpoint, map_location=device)
+            
+            # Handle different checkpoint formats
+            if 'stduent' in checkpoint:
+                # Training checkpoint format
+                model.load_state_dict(checkpoint['stduent'])
+                print(f"Loaded checkpoint from epoch {checkpoint.get('epoch', 'unknown')}")
+            elif 'model_state_dict' in checkpoint:
+                # Standard format
+                model.load_state_dict(checkpoint['model_state_dict'])
+            else:
+                # Assume it's just the model state dict
+                model.load_state_dict(checkpoint)
+            
+            print("Checkpoint loaded successfully!")
         else:
-            # Assume it's just the model state dict
-            model.load_state_dict(checkpoint)
-        
-        print("Checkpoint loaded successfully!")
+            print(f"Checkpoint not found: {args.checkpoint}")
+            print("Using pretrained model instead...")
     else:
-        print(f"Checkpoint not found: {args.checkpoint}")
-        sys.exit(1)
+        print("No checkpoint provided, using pretrained model...")
     
     # Set up dataset
     dataset_map = {"CUB": CUBirds, "SOP": SOP, "Cars": Cars, "Inshop": Inshop_Dataset}
@@ -369,6 +366,7 @@ def main():
     print(f"Model: {args.model}")
     print(f"Embedding dimension: {args.emb}")
     print(f"Hyperbolic curvature: {args.hyp_c}")
+    print(f"Checkpoint: {args.checkpoint if args.checkpoint else 'pretrained'}")
     print("-"*50)
     
     print(f"R@1: {recall_at_1:.2f}%")
@@ -388,10 +386,11 @@ def main():
         'recall_at_1_helpers': recall_at_1,
         'recalls': recalls,
         'mAP': map_score,
-        'checkpoint': args.checkpoint
+        'checkpoint': args.checkpoint if args.checkpoint else 'pretrained'
     }
     
-    output_file = os.path.join(args.output_dir, f"{args.dataset}_{args.model}_results.json")
+    checkpoint_name = os.path.basename(args.checkpoint).replace('.pth', '').replace('.pt', '') if args.checkpoint else 'pretrained'
+    output_file = os.path.join(args.output_dir, f"{args.dataset}_{args.model}_{checkpoint_name}_results.json")
     with open(output_file, 'w') as f:
         json.dump(results, f, indent=2)
     
@@ -414,18 +413,11 @@ def main():
             query_indices = list(range(len(eval_dataset)))
             gallery_indices = list(range(len(eval_dataset)))
         
-        # Save path for visualization
-        viz_save_path = None
-        if args.save_viz:
-            viz_dir = os.path.join(args.output_dir, "visualizations")
-            Path(viz_dir).mkdir(parents=True, exist_ok=True)
-            viz_save_path = os.path.join(viz_dir, f"{args.dataset}_{args.model}_query_{args.query_index}_top{args.top_k_viz}.png")
-        
         # Visualize top-k results
         visualize_top_k_results(
             query_embeddings, query_labels, gallery_embeddings, gallery_labels,
             query_indices, gallery_indices, dataset_class, args.data_path,
-            query_idx=args.query_index, top_k=args.top_k_viz, save_path=viz_save_path
+            query_idx=args.query_index, top_k=args.top_k_viz
         )
 
 if __name__ == "__main__":
