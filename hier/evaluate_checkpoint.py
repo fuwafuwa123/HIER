@@ -11,6 +11,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import json
+import matplotlib
+# Try to use interactive backend for notebooks, fallback to Agg if needed
+try:
+    matplotlib.use('TkAgg')  # Try interactive backend
+except:
+    matplotlib.use('Agg')  # Fallback to non-interactive
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from pathlib import Path
@@ -56,6 +62,7 @@ def get_args_parser():
     parser.add_argument('--visualize', action='store_true', help='Visualize top-k results')
     parser.add_argument('--query_index', default=0, type=int, help='Index of query image to visualize')
     parser.add_argument('--top_k_viz', default=5, type=int, help='Number of top results to visualize')
+    parser.add_argument('--save_viz_dir', default=None, type=str, help='Directory to save visualization images')
     
     return parser
 
@@ -187,7 +194,7 @@ def compute_single_set_metrics(embeddings, labels, k_values):
 
 def visualize_top_k_results(query_embeddings, query_labels, gallery_embeddings, gallery_labels, 
                            query_indices, gallery_indices, dataset_class, data_path, 
-                           query_idx=0, top_k=5):
+                           query_idx=0, top_k=5, save_dir=None):
     """
     Visualize top-k retrieval results for a given query
     """
@@ -282,7 +289,19 @@ def visualize_top_k_results(query_embeddings, query_labels, gallery_embeddings, 
         ax.add_patch(rect)
     
     plt.tight_layout()
-    plt.show()
+    
+    # Save the visualization
+    if save_dir:
+        Path(save_dir).mkdir(parents=True, exist_ok=True)
+        save_path = os.path.join(save_dir, f'visualization_query_{query_idx}_top{top_k}.png')
+    else:
+        save_path = f'visualization_query_{query_idx}_top{top_k}.png'
+    
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    print(f"Visualization saved to: {save_path}")
+    
+    # Close the figure to free memory
+    plt.close(fig)
     
     # Print results
     print(f"\nQuery Class: {query_label}")
@@ -402,6 +421,7 @@ def main():
     print(f"\nResults saved to: {output_file}")
     
     # Visualization
+    print(f"Visualization flag: {args.visualize}")
     if args.visualize:
         print("\n" + "="*50)
         print("VISUALIZATION")
@@ -422,7 +442,7 @@ def main():
         visualize_top_k_results(
             query_embeddings, query_labels, gallery_embeddings, gallery_labels,
             query_indices, gallery_indices, dataset_class, args.data_path,
-            query_idx=args.query_index, top_k=args.top_k_viz
+            query_idx=args.query_index, top_k=args.top_k_viz, save_dir=args.save_viz_dir
         )
 
 if __name__ == "__main__":
