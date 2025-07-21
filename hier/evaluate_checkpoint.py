@@ -59,21 +59,21 @@ def get_args_parser():
     
     return parser
 
-def create_get_emb_function(model, dataset_class, data_path, hyp_c):
+def create_get_emb_function(model_name, model_obj, dataset_class, data_path, hyp_c):
     """
     Create a get_emb function for the evaluate function from helpers
     """
     # Set up data transforms
-    if model.startswith("vit"):
+    if model_name.startswith("vit"):
         mean_std = (0.5, 0.5, 0.5), (0.5, 0.5, 0.5)
-    elif model == "bn_inception":
+    elif model_name == "bn_inception":
         mean_std = (104, 117, 128), (1,1,1)
     else:
         mean_std = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
     
     def get_emb_func(ds_type="eval"):
         return get_emb(
-            model=model, ds=dataset_class, path=data_path, 
+            model=model_obj, ds=dataset_class, path=data_path, 
             mean_std=mean_std, world_size=1, resize=256, crop=224, ds_type=ds_type
         )
     
@@ -339,7 +339,7 @@ def main():
     print(f"Evaluating on {args.dataset} dataset...")
     
     # Create get_emb function for evaluation
-    get_emb_func = create_get_emb_function(args.model, dataset_class, args.data_path, args.hyp_c)
+    get_emb_func = create_get_emb_function(args.model, model, dataset_class, args.data_path, args.hyp_c)
     
     # Use the existing evaluate function from helpers
     recall_at_1 = evaluate(get_emb_func, args.dataset, args.hyp_c)
