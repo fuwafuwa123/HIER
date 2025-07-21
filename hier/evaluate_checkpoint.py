@@ -11,12 +11,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import json
-import matplotlib
-# Try to use interactive backend for notebooks, fallback to Agg if needed
-try:
-    matplotlib.use('TkAgg')  # Try interactive backend
-except:
-    matplotlib.use('Agg')  # Fallback to non-interactive
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from pathlib import Path
