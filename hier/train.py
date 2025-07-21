@@ -95,7 +95,7 @@ def get_args_parser():
     parser.add_argument('--clip_r', type=float, default=2.3)
     parser.add_argument('--save_emb', type=utils.bool_flag, default=False)
     parser.add_argument('--best_recall', type=int, default=0)
-    parser.add_argument('--loss', default='PA', type=str, choices=['PA', 'MS', 'PNCA', 'SoftTriple', 'SupCon'])
+    parser.add_argument('--loss', default='PA', type=str, choices=['PA', 'MS', 'PNCA', 'SoftTriple', 'SupCon', 'Triplet'])
     parser.add_argument('--cluster_start', default=0, type=int)
     parser.add_argument('--topk', default=30, type=int)
     parser.add_argument('--num_hproxies', default=512, type=int, help="""Dimensionality of output for [CLS] token.""")
@@ -203,7 +203,10 @@ def train_one_epoch(model, cluster_loss, sup_metric_loss, get_emb_s, data_loader
         x, y, index  = x.float().cpu(), y.long().cpu(), index.long().cpu()
         torch.save((x, y, index), "{}/{}/{}_{}_train_{}.pt".format(args.output_dir, args.dataset, args.model, args.run_name, epoch))
         
-        x = cluster_loss.to_hyperbolic(cluster_loss.lcas).float().detach().cpu()
+        if args.hyp_c > 0:
+            x = cluster_loss.to_hyperbolic(cluster_loss.lcas).float().detach().cpu()
+        else:
+            x = F.normalize(cluster_loss.lcas, p=2, dim=1).float().detach().cpu()
         y = (torch.ones(len(x)) * (y.max()+1)).long().cpu()
         torch.save((x,y), "{}/{}/{}_{}_lca_{}.pt".format(args.output_dir, args.dataset, args.model, args.run_name, epoch))
         
@@ -262,11 +265,13 @@ if __name__ == "__main__":
     elif args.loss == 'PA':
         sup_metric_loss = PALoss_Angle(nb_classes=nb_classes, sz_embed = args.emb).cuda()
     elif args.loss == 'SoftTriple':
-        sup_metric_loss = SoftTripleLoss_Angle(nb_classes=nb_classes, sz_embed = sz_embed).cuda()
+        sup_metric_loss = SoftTripleLoss_Angle(nb_classes=nb_classes, sz_embed = args.emb).cuda()
     elif args.loss == 'PNCA':
         sup_metric_loss = PNCALoss_Angle(nb_classes=nb_classes, sz_embed = args.emb).cuda()
     elif args.loss =='SupCon':
         sup_metric_loss = SupCon(hyp_c=args.hyp_c, IPC=args.IPC).cuda()
+    elif args.loss == 'Triplet':
+        sup_metric_loss = TripletLoss_Angle(margin=0.01).cuda()
     
     params_groups = utils.get_params_groups(model, sup_metric_loss, cluster_loss, fc_lr_scale=args.fc_lr_scale, weight_decay=args.weight_decay)
     if args.optimizer == "adamw":

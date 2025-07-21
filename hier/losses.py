@@ -103,6 +103,11 @@ class HIERLoss(nn.Module):
         loss += self.compute_gHHC(lcas, lcas, all_dist_matrix[bs:, bs:], indices_tuple2, sim_matrix2)
         return loss
     
+
+    
+        
+        
+        
 class MSLoss(nn.Module):
     def __init__(self, tau=0.2, hyp_c=0.1):
         super().__init__()
@@ -205,6 +210,16 @@ class MSLoss_Angle(nn.Module):
         # loss
         loss = (pos_loss + neg_loss).mean()
                 
+        return loss
+    
+class TripletLoss_Angle(torch.nn.Module):
+    def __init__(self, margin=0.01):
+        torch.nn.Module.__init__(self)
+        self.loss_func = losses.TripletMarginLoss(margin=margin)
+    
+    def forward(self, X, y):
+        X = F.normalize(X)
+        loss = self.loss_func(X, y)
         return loss
     
 class PALoss_Angle(torch.nn.Module):
