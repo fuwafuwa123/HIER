@@ -23,7 +23,7 @@ import PIL
 import multiprocessing
 from losses import *
 
-from sampler import UniqueClassSempler, UniqueClassSampler, BalancedSampler
+from sampler import  UniqueClassSampler, BalancedSampler
 from helpers import get_emb, evaluate
 from dataset import CUBirds, SOP, Cars
 from dataset.Inshop import Inshop_Dataset
@@ -270,8 +270,8 @@ if __name__ == "__main__":
         sup_metric_loss = PNCALoss_Angle(nb_classes=nb_classes, sz_embed = args.emb).cuda()
     elif args.loss =='SupCon':
         sup_metric_loss = SupCon(hyp_c=args.hyp_c, IPC=args.IPC).cuda()
-    elif args.loss == 'Triplet':
-        sup_metric_loss = TripletLoss_Angle(margin=0.01).cuda()
+    elif args.loss == 'HierachicalHyperbolicTriplet':
+        sup_metric_loss = HierarchicalHyperbolicTripletLoss(num_levels=args.num_levels, margin=args.margin, semihard=args.semihard, tau=args.tau, hyp_c=args.hyp_c).cuda()
     
     params_groups = utils.get_params_groups(model, sup_metric_loss, cluster_loss, fc_lr_scale=args.fc_lr_scale, weight_decay=args.weight_decay)
     if args.optimizer == "adamw":

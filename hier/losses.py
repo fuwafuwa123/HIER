@@ -102,7 +102,32 @@ class HIERLoss(nn.Module):
         indices_tuple2 = self.get_reciprocal_triplets(sim_matrix2, topk=topk, t_per_anchor = 50)
         loss += self.compute_gHHC(lcas, lcas, all_dist_matrix[bs:, bs:], indices_tuple2, sim_matrix2)
         return loss
-    
+
+
+class HierarchicalHyperbolicTripletLoss(nn.Module):
+    def __init__(self, num_levels, margin=0.1, semihard=True, tau=0.1, hyp_c=0.1):
+        super().__init__()
+        self.num_levels = num_levels
+        self.margin = margin
+        self.semihard = semihard
+        self.tau = tau
+
+        self.miner = miners.BatchEasyHardMiner() if semihard else miners.BatchAllTripletMiner()
+        self.loss_func = losses.TripletMarginLoss(margin=margin)
+        self.dist_f = lambda x, y: dist_matrix(x, y, c=hyp_c)
+
+    def forward(self, embeddings, labels):
+        """
+        labels: shape [batch_size, num_levels]
+        """
+        total_loss = 0.0
+        for level in range(self.num_levels):
+            level_labels = labels[:, level]
+            distances = self.dist_f(embeddings, embeddings)
+            indices_tuple = self.miner(distances, level_labels)
+            loss = self.loss_func(embeddings, indices_tuple)
+            total_loss += loss
+        return total_loss
     
 class MSLoss(nn.Module):
     def __init__(self, tau=0.2, hyp_c=0.1):
