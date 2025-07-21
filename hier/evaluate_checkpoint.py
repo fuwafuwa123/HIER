@@ -338,16 +338,22 @@ def main():
         if os.path.isfile(args.checkpoint):
             checkpoint = torch.load(args.checkpoint, map_location=device)
             
-            # Handle different checkpoint formats
-            if 'stduent' in checkpoint:
-                model.load_state_dict(checkpoint['stduent'])
-                print(f"Loaded checkpoint from epoch {checkpoint.get('epoch', 'unknown')}")
-            elif 'model_state_dict' in checkpoint:
-                model.load_state_dict(checkpoint['model_state_dict'])
+            # Check if checkpoint is a tuple (embeddings, labels)
+            if isinstance(checkpoint, tuple):
+                print("Checkpoint contains embeddings and labels, not model weights.")
+                print("Using pretrained model for evaluation...")
+                checkpoint = None
             else:
-                model.load_state_dict(checkpoint)
-            
-            print("Checkpoint loaded successfully!")
+                # Handle different checkpoint formats
+                if 'stduent' in checkpoint:
+                    model.load_state_dict(checkpoint['stduent'])
+                    print(f"Loaded checkpoint from epoch {checkpoint.get('epoch', 'unknown')}")
+                elif 'model_state_dict' in checkpoint:
+                    model.load_state_dict(checkpoint['model_state_dict'])
+                else:
+                    model.load_state_dict(checkpoint)
+                
+                print("Checkpoint loaded successfully!")
         else:
             print(f"Checkpoint not found: {args.checkpoint}")
             print("Using pretrained model instead...")
