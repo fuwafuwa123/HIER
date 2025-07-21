@@ -103,11 +103,7 @@ class HIERLoss(nn.Module):
         loss += self.compute_gHHC(lcas, lcas, all_dist_matrix[bs:, bs:], indices_tuple2, sim_matrix2)
         return loss
     
-
     
-        
-        
-        
 class MSLoss(nn.Module):
     def __init__(self, tau=0.2, hyp_c=0.1):
         super().__init__()
