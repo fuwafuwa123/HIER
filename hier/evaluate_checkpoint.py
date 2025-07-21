@@ -339,7 +339,7 @@ def main():
     print(f"Evaluating on {args.dataset} dataset...")
     
     # Create get_emb function for evaluation
-    get_emb_func = create_get_emb_function(model, dataset_class, args.data_path, args.hyp_c)
+    get_emb_func = create_get_emb_function(args.model, dataset_class, args.data_path, args.hyp_c)
     
     # Use the existing evaluate function from helpers
     recall_at_1 = evaluate(get_emb_func, args.dataset, args.hyp_c)
