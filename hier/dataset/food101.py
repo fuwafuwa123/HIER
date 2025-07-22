@@ -2,19 +2,17 @@ from .base import *
 from datasets import load_dataset
 from PIL import Image
 import io
+import warnings
 
 class Food101(BaseDataset):
     def __init__(self, root, mode='train', transform=None):
         super().__init__(root, mode, transform)
         
-        # Define classes for train/test
-        if mode == 'train':
-            self.classes = list(range(0, 20))
-        else:
-            self.classes = list(range(99, 102))
-
-        # Load dataset with streaming
+        self.classes = list(range(0, 20)) if mode == 'train' else list(range(99, 102))
         dataset = load_dataset("food101", split=mode, streaming=True)
+        
+        warnings.filterwarnings("ignore", category=UserWarning, module="PIL")
+        
         index = 0
         for i, item in enumerate(dataset):
             label = item['label']
@@ -22,35 +20,42 @@ class Food101(BaseDataset):
                 continue
 
             try:
-                # Get the image bytes directly to avoid EXIF processing
-                image_bytes = item['image'].tobytes()
+                # Get the original image
+                image = item['image']
                 
-                # Create a clean image without metadata
-                with io.BytesIO(image_bytes) as buffer:
-                    try:
-                        # Load image while ignoring EXIF data
-                        image = Image.open(buffer)
-                        image.load()  # Load all pixel data
+                # Create a clean copy by converting to RGB and stripping metadata
+                try:
+                    # Create new image buffer
+                    with io.BytesIO() as buffer:
+                        # Save as PNG to avoid JPEG metadata issues
+                        image.save(buffer, format='PNG')
+                        buffer.seek(0)
                         
-                        # Convert to RGB if needed
-                        if image.mode != 'RGB':
-                            image = image.convert('RGB')
+                        # Load the clean image
+                        clean_image = Image.open(buffer)
+                        clean_image.load()
+                        
+                        # Ensure RGB format
+                        if clean_image.mode != 'RGB':
+                            clean_image = clean_image.convert('RGB')
                             
-                        # Verify image is valid
-                        image.thumbnail((1, 1))
+                        # Quick validation
+                        clean_image.thumbnail((10, 10))
                         
-                    except Exception as e:
-                        print(f"[Image Process] Error processing image at index {i}: {e}")
-                        continue
+                        self.ys.append(label)
+                        self.I.append(index)
+                        self.im_paths.append(clean_image)
+                        index += 1
                         
+                except Exception as e:
+                    print(f"[Image Process] Error processing image at index {i}: {e}")
+                    continue
+                    
             except Exception as e:
                 print(f"[Skip] Error reading image at index {i}: {e}")
                 continue
 
-            self.ys.append(label)
-            self.I.append(index)
-            self.im_paths.append(image)  # Store PIL Image object directly
-            index += 1
-
+        warnings.resetwarnings()
+        
         if len(self.ys) == 0:
             raise RuntimeError(f"No valid images found for mode '{mode}' with classes {self.classes}")
