@@ -22,7 +22,7 @@ class Food101(BaseDataset):
                 continue
 
             try:
-                image = item['image']['bytes']
+                image = item['image']
                 _ = image.size  # kiểm tra ảnh hợp lệ
             except Exception as e:
                 print(f"[Skip] Error reading image at index {i}: {e}")
