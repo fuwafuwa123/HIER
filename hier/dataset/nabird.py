@@ -71,6 +71,6 @@ def load_class_mapping(class_file):
     class_map = {}
     with open(class_file, 'r') as f:
         for line in f:
-            id_str, folder = line.strip().split()
+            id_str, folder = line.strip().split(maxsplit=1)
             class_map[folder] = int(id_str)
     return class_map
