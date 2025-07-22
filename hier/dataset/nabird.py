@@ -28,7 +28,7 @@ class NABirds(BaseDataset):
         index = 0
         for img_path, label in dataset.imgs:
             class_folder = idx_to_classname[label]
-            class_id = class_map[class_folder]  
+            class_id = class_map[int(class_folder)]
 
             fn = img_path.split('/')[-1]
             if class_id in self.classes and not fn.startswith('._'):
@@ -72,5 +72,5 @@ def load_class_mapping(class_file):
     with open(class_file, 'r') as f:
         for line in f:
             id_str, folder = line.strip().split(maxsplit=1)
-            class_map[folder] = int(id_str)
+            class_map[int(folder)] = int(id_str)
     return class_map
