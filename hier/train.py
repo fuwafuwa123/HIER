@@ -221,7 +221,7 @@ if __name__ == "__main__":
         mean_std = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
 
     train_tr = utils.MultiTransforms(mean_std, model=args.model, view=args.global_crops_number)
-    ds_list = {"CUB": CUBirds, "SOP": SOP, "Cars": Cars, "Inshop": Inshop_Dataset, "Food": Food101}
+    ds_list = {"CUB": CUBirds, "SOP": SOP, "Cars": Cars, "Inshop": Inshop_Dataset, "Food101": Food101}
     ds_class = ds_list[args.dataset]
     ds_train = ds_class(args.data_path, "train", train_tr)
     nb_classes = len(list(set(ds_train.ys)))
