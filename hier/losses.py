@@ -6,7 +6,6 @@ import random
 import numpy as np
 
 from pytorch_metric_learning import miners, losses
-from pytorch_metric_learning.utils import loss_and_miner_utils as lmu
 import torch.distributed as dist
 
 import hyptorch.pmath as pmath
@@ -104,30 +103,57 @@ class HIERLoss(nn.Module):
         return loss
 
 
-class HierarchicalHyperbolicTripletLoss(nn.Module):
-    def __init__(self, num_levels, margin=0.1, semihard=True, tau=0.1, hyp_c=0.1):
+# Triplet margin loss with hyperbolic distance
+class HyperbolicTripletMarginLoss(nn.Module):
+    def __init__(self, margin=0.1, c=1.0):
         super().__init__()
-        self.num_levels = num_levels
         self.margin = margin
-        self.semihard = semihard
-        self.tau = tau
+        self.c = c
+    
+    def hyperbolic_distance(x, y, c=1.0, eps=1e-5):
+        # Clamp norm to avoid instability
+        x_norm = x.norm(dim=-1, keepdim=True).clamp_max(1 - eps)
+        y_norm = y.norm(dim=-1, keepdim=True).clamp_max(1 - eps)
+        sqrt_c = c**0.5
+        diff = torch.cdist(x, y, p=2).clamp_min(eps)
+        
+        num = 2 * diff ** 2
+        denom = (1 - c * x_norm**2) * (1 - c * y_norm**2).transpose(0, 1)
+        dist = torch.acosh(1 + num / denom.clamp_min(eps))
+        return dist
 
-        self.miner = miners.BatchEasyHardMiner() if semihard else miners.BatchAllTripletMiner()
-        self.loss_func = losses.TripletMarginLoss(margin=margin)
-        self.dist_f = lambda x, y: dist_matrix(x, y, c=hyp_c)
+    def get_triplets(embeddings, labels, margin=0.1, semihard=True, dist_f=None):
+        batch_size = embeddings.size(0)
+        distances = dist_f(embeddings, embeddings)
 
-    def forward(self, embeddings, labels):
-        """
-        labels: shape [batch_size, num_levels]
-        """
-        total_loss = 0.0
-        for level in range(self.num_levels):
-            level_labels = labels[:, level]
-            distances = self.dist_f(embeddings, embeddings)
-            indices_tuple = self.miner(distances, level_labels)
-            loss = self.loss_func(embeddings, indices_tuple)
-            total_loss += loss
-        return total_loss
+        triplets = []
+        for i in range(batch_size):
+            anchor_label = labels[i]
+            for j in range(batch_size):
+                if labels[j] != anchor_label:
+                    continue  # j must be positive
+                for k in range(batch_size):
+                    if labels[k] == anchor_label:
+                        continue  # k must be negative
+                    d_ap = distances[i, j]
+                    d_an = distances[i, k]
+                    if semihard:
+                        if d_ap < d_an and d_an - d_ap < margin:
+                            triplets.append((i, j, k))
+                    else:
+                        triplets.append((i, j, k))
+        return triplets
+
+    def forward(self, embeddings, triplets):
+        loss = 0.0
+        count = 0
+        for i, j, k in triplets:
+            d_ap = hyperbolic_distance(embeddings[i:i+1], embeddings[j:j+1], c=self.c)
+            d_an = hyperbolic_distance(embeddings[i:i+1], embeddings[k:k+1], c=self.c)
+            triplet_loss = F.relu(d_ap - d_an + self.margin)
+            loss += triplet_loss
+            count += 1
+        return loss / (count + 1e-8)
     
 class MSLoss(nn.Module):
     def __init__(self, tau=0.2, hyp_c=0.1):
@@ -173,6 +199,18 @@ class MSLoss(nn.Module):
         # loss
         loss = (pos_loss + neg_loss).mean()
                 
+        return loss
+    
+class TripletLoss(nn.Module):
+    def __init__(self, margin=0.1, **kwargs):
+        super(TripletLoss, self).__init__()
+        self.margin = margin
+        self.miner = miners.TripletMarginMiner(margin, type_of_triplets = 'semihard')
+        self.loss_func = losses.TripletMarginLoss(margin = self.margin)
+        
+    def forward(self, embeddings, labels):
+        hard_pairs = self.miner(embeddings, labels)
+        loss = self.loss_func(embeddings, labels, hard_pairs)
         return loss
     
 class Contrastive_Angle(nn.Module):
@@ -233,15 +271,6 @@ class MSLoss_Angle(nn.Module):
                 
         return loss
     
-class TripletLoss_Angle(torch.nn.Module):
-    def __init__(self, margin=0.01):
-        torch.nn.Module.__init__(self)
-        self.loss_func = losses.TripletMarginLoss(margin=margin)
-    
-    def forward(self, X, y):
-        X = F.normalize(X)
-        loss = self.loss_func(X, y)
-        return loss
     
 class PALoss_Angle(torch.nn.Module):
     def __init__(self, nb_classes, sz_embed, mrg = 0.1, alpha = 32):
@@ -279,6 +308,8 @@ class PALoss_Angle(torch.nn.Module):
         
         loss = (pos_term + neg_term)
         return loss
+    
+
     
 class PNCALoss_Angle(torch.nn.Module):
     def __init__(self, nb_classes, sz_embed, mrg = 0.1, alpha = 32, normalize=True):

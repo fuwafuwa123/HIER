@@ -25,7 +25,7 @@ from losses import *
 
 from sampler import  UniqueClassSampler, BalancedSampler
 from helpers import get_emb, evaluate
-from dataset import CUBirds, SOP, Cars
+from dataset import CUBirds, SOP, Cars, Food101
 from dataset.Inshop import Inshop_Dataset
 from models.model import init_model
         
@@ -95,18 +95,16 @@ def get_args_parser():
     parser.add_argument('--clip_r', type=float, default=2.3)
     parser.add_argument('--save_emb', type=utils.bool_flag, default=False)
     parser.add_argument('--best_recall', type=int, default=0)
-    parser.add_argument('--loss', default='PA', type=str, choices=['PA', 'MS', 'PNCA', 'SoftTriple', 'SupCon', 'Triplet'])
+    parser.add_argument('--loss', default='PA', type=str, choices=['PA', 'MS', 'PNCA', 'SoftTriple', 'SupCon', 'HierachicalHyperbolicTriplet'])
     parser.add_argument('--cluster_start', default=0, type=int)
     parser.add_argument('--topk', default=30, type=int)
     parser.add_argument('--num_hproxies', default=512, type=int, help="""Dimensionality of output for [CLS] token.""")
     parser.add_argument('--lambda1', default=1.0, type=float, help="""loss weight for metric learning
         loss over [CLS] tokens (Default: 1.0)""")
-    parser.add_argument('--lambda2', default=1.0, type=float, help="""loss weight for clustering loss over [CLS] tokens (Default: 1.0)""")
-    parser.add_argument('--mrg', type=float, default=0.1)
     
     # Misc
     parser.add_argument('--dataset', default='CUB', type=str, 
-                        choices=["SOP", "CUB", "Cars", "Inshop"], help='Please specify dataset to train')
+                        choices=["SOP", "CUB", "Cars", "Inshop", "Food101"], help='Please specify dataset to train')
     parser.add_argument('--data_path', default='/kaggle/working/HIER/data', type=str,
         help='Please specify path to the ImageNet training data.')
     parser.add_argument('--output_dir', default="./logs/", type=str, help='Path to save logs and checkpoints.')
@@ -121,7 +119,7 @@ def get_args_parser():
 
     return parser
 
-def train_one_epoch(model, cluster_loss, sup_metric_loss, get_emb_s, data_loader, optimizer, 
+def train_one_epoch(model, sup_metric_loss, get_emb_s, data_loader, optimizer, 
                     lr_schedule, epoch, fp16_scaler, args):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Epoch: [{}/{}]'.format(epoch, args.epochs)
@@ -146,40 +144,29 @@ def train_one_epoch(model, cluster_loss, sup_metric_loss, get_emb_s, data_loader
             if args.loss == 'SupCon' and args.IPC > 0:
                 z = z.view(len(z) // args.IPC, args.IPC, args.emb)
             
-            if world_size > 1:
+            if utils.get_world_size() > 1:
                 z = utils.all_gather(z, args.local_rank)
                 y = utils.all_gather(y, args.local_rank)
             
-            loss1 = sup_metric_loss(z, y) * args.lambda1
-            if args.lambda2 > 0:
-                loss2 = cluster_loss(z, y, args.topk) * args.lambda2
-                if epoch < args.cluster_start:
-                    loss2 = loss2 * 0
-                loss = loss1 + loss2
-            else:
-                loss = loss1
+            loss = sup_metric_loss(z, y) * args.lambda1
         
         optimizer.zero_grad()
         with torch.autograd.set_detect_anomaly(False):
             if fp16_scaler is None:
                 loss.backward()
                 if args.clip_grad > 0:
-                    param_norms = utils.clip_gradients_value(model, 10, losses=[cluster_loss, sup_metric_loss])
+                    param_norms = utils.clip_gradients_value(model, 10, losses=[sup_metric_loss])
                 optimizer.step()
             else:
                 fp16_scaler.scale(loss).backward()
                 if args.clip_grad > 0:
                     fp16_scaler.unscale_(optimizer)  # unscale the gradients of optimizer's assigned params in-place
-                    param_norms = utils.clip_gradients_value(model, 10, losses=[cluster_loss, sup_metric_loss])
-                    
-                    
+                    param_norms = utils.clip_gradients_value(model, 10, losses=[sup_metric_loss])
                 fp16_scaler.step(optimizer)
                 fp16_scaler.update()
                 
         torch.cuda.synchronize()
-        metric_logger.update(metric_loss=loss1.item())
-        if args.lambda2 > 0:
-            metric_logger.update(cluster_loss=loss2.item())
+        metric_logger.update(metric_loss=loss.item())
         metric_logger.update(total_loss=loss.item())
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
         metric_logger.update(wd=optimizer.param_groups[0]["weight_decay"])
@@ -203,12 +190,6 @@ def train_one_epoch(model, cluster_loss, sup_metric_loss, get_emb_s, data_loader
         x, y, index  = x.float().cpu(), y.long().cpu(), index.long().cpu()
         torch.save((x, y, index), "{}/{}/{}_{}_train_{}.pt".format(args.output_dir, args.dataset, args.model, args.run_name, epoch))
         
-        if args.hyp_c > 0:
-            x = cluster_loss.to_hyperbolic(cluster_loss.lcas).float().detach().cpu()
-        else:
-            x = F.normalize(cluster_loss.lcas, p=2, dim=1).float().detach().cpu()
-        y = (torch.ones(len(x)) * (y.max()+1)).long().cpu()
-        torch.save((x,y), "{}/{}/{}_{}_lca_{}.pt".format(args.output_dir, args.dataset, args.model, args.run_name, epoch))
         
         if utils.is_main_process():
             print('Save embeding vectors')
@@ -220,14 +201,14 @@ def train_one_epoch(model, cluster_loss, sup_metric_loss, get_emb_s, data_loader
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser('HIER', parents=[get_args_parser()])
+    parser = argparse.ArgumentParser('SOICT', parents=[get_args_parser()])
     args = parser.parse_args()
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     
     start_time = time.time()
     
     if args.local_rank == 0:
-        wandb.init(project="hyp_metric", name="{}_{}_{}".format(args.dataset, args.model, args.run_name), config=args)
+        wandb.init(project="SOICT", name="{}_{}_{}".format(args.dataset, args.model, args.run_name), config=args)
     utils.init_distributed_mode(args)
     utils.fix_random_seeds(args.seed)
     world_size = utils.get_world_size()
@@ -240,7 +221,7 @@ if __name__ == "__main__":
         mean_std = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
 
     train_tr = utils.MultiTransforms(mean_std, model=args.model, view=args.global_crops_number)
-    ds_list = {"CUB": CUBirds, "SOP": SOP, "Cars": Cars, "Inshop": Inshop_Dataset}
+    ds_list = {"CUB": CUBirds, "SOP": SOP, "Cars": Cars, "Inshop": Inshop_Dataset, "Food": Food101}
     ds_class = ds_list[args.dataset]
     ds_train = ds_class(args.data_path, "train", train_tr)
     nb_classes = len(list(set(ds_train.ys)))
@@ -259,7 +240,6 @@ if __name__ == "__main__":
 
     model = init_model(args)
     model = nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], broadcast_buffers=True, find_unused_parameters=(args.model == 'bn_inception'))
-    cluster_loss = HIERLoss(args.num_hproxies, args.emb, mrg=args.mrg, hyp_c=args.hyp_c, clip_r=args.clip_r).cuda()
     if args.loss == 'MS':
         sup_metric_loss = MSLoss_Angle().cuda()
     elif args.loss == 'PA':
@@ -270,10 +250,8 @@ if __name__ == "__main__":
         sup_metric_loss = PNCALoss_Angle(nb_classes=nb_classes, sz_embed = args.emb).cuda()
     elif args.loss =='SupCon':
         sup_metric_loss = SupCon(hyp_c=args.hyp_c, IPC=args.IPC).cuda()
-    elif args.loss == 'HierachicalHyperbolicTriplet':
-        sup_metric_loss = HierarchicalHyperbolicTripletLoss(num_levels=args.num_levels, margin=args.margin, semihard=args.semihard, tau=args.tau, hyp_c=args.hyp_c).cuda()
     
-    params_groups = utils.get_params_groups(model, sup_metric_loss, cluster_loss, fc_lr_scale=args.fc_lr_scale, weight_decay=args.weight_decay)
+    params_groups = utils.get_params_groups(model, sup_metric_loss, fc_lr_scale=args.fc_lr_scale, weight_decay=args.weight_decay)
     if args.optimizer == "adamw":
         optimizer = torch.optim.AdamW(params_groups, eps=1e-4 if args.use_fp16 else 1e-8)  # to use with ViTs
     elif args.optimizer == "adamp":
@@ -311,7 +289,7 @@ if __name__ == "__main__":
         if sampler is not None and args.IPC > 0:
             sampler.set_epoch(epoch)
         # ============ training one epoch ... ============
-        train_stats = train_one_epoch(model, cluster_loss, sup_metric_loss, get_emb_s, data_loader, optimizer, 
+        train_stats = train_one_epoch(model, sup_metric_loss, get_emb_s, data_loader, optimizer, 
                                       lr_schedule, epoch, fp16_scaler, args)
 
         # ============ writing logs ... ============

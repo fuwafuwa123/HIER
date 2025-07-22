@@ -6,7 +6,7 @@ CUDA_VISIBLE_DEVICES=0,1 python -m torch.distributed.launch \
     --hyp_c 0.1 --warmup_epochs 1 \
     --weight_decay 1e-2 --use_fp16 True \
     --clip_grad 1.0 --eval_freq 1 \
-    --lambda1 1 --lambda2 0.5 --topk 20 --mrg 0.1 \
+    --lambda1 1 --topk 20 --mrg 0.1 \
     --dataset Cars --model deit_small_distilled_patch16_224 \
     --IPC 2 --loss PA --emb 128 --use_lastnorm True \
     --optimizer adamw
