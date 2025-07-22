@@ -30,10 +30,13 @@ class Food101(BaseDataset):
                     # Convert to RGB if needed
                     if image.mode != 'RGB':
                         image = image.convert('RGB')
-                        
                     # Verify image is valid by attempting to resize a tiny version
                     image.thumbnail((1, 1))
-                    
+                    # Try to access EXIF data, skip if UnicodeDecodeError or other issues
+                    _ = image.getexif()
+                except UnicodeDecodeError as e:
+                    print(f"[EXIF] UnicodeDecodeError at index {i}: {e}")
+                    continue
                 except Exception as e:
                     print(f"[Image Process] Error processing image at index {i}: {e}")
                     continue
