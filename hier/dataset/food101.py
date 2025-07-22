@@ -15,7 +15,6 @@ class Food101(BaseDataset):
 
         # Load dataset with streaming
         dataset = load_dataset("food101", split=mode, streaming=True)
-        
         index = 0
         for i, item in enumerate(dataset):
             label = item['label']
@@ -23,24 +22,27 @@ class Food101(BaseDataset):
                 continue
 
             try:
-                image = item['image']
+                # Get the image bytes directly to avoid EXIF processing
+                image_bytes = item['image'].tobytes()
                 
-                # Handle potential image issues
-                try:
-                    # Convert to RGB if needed
-                    if image.mode != 'RGB':
-                        image = image.convert('RGB')
-                    # Verify image is valid by attempting to resize a tiny version
-                    image.thumbnail((1, 1))
-                    # Try to access EXIF data, skip if UnicodeDecodeError or other issues
-                    _ = image.getexif()
-                except UnicodeDecodeError as e:
-                    print(f"[EXIF] UnicodeDecodeError at index {i}: {e}")
-                    continue
-                except Exception as e:
-                    print(f"[Image Process] Error processing image at index {i}: {e}")
-                    continue
-                    
+                # Create a clean image without metadata
+                with io.BytesIO(image_bytes) as buffer:
+                    try:
+                        # Load image while ignoring EXIF data
+                        image = Image.open(buffer)
+                        image.load()  # Load all pixel data
+                        
+                        # Convert to RGB if needed
+                        if image.mode != 'RGB':
+                            image = image.convert('RGB')
+                            
+                        # Verify image is valid
+                        image.thumbnail((1, 1))
+                        
+                    except Exception as e:
+                        print(f"[Image Process] Error processing image at index {i}: {e}")
+                        continue
+                        
             except Exception as e:
                 print(f"[Skip] Error reading image at index {i}: {e}")
                 continue
@@ -50,6 +52,5 @@ class Food101(BaseDataset):
             self.im_paths.append(image)  # Store PIL Image object directly
             index += 1
 
-        # Verify we have some data
         if len(self.ys) == 0:
             raise RuntimeError(f"No valid images found for mode '{mode}' with classes {self.classes}")
