@@ -101,6 +101,7 @@ def get_args_parser():
     parser.add_argument('--num_hproxies', default=512, type=int, help="""Dimensionality of output for [CLS] token.""")
     parser.add_argument('--lambda1', default=1.0, type=float, help="""loss weight for metric learning
         loss over [CLS] tokens (Default: 1.0)""")
+    parser.add_argument('--mrg', type=float, default=0.1)
     
     # Misc
     parser.add_argument('--dataset', default='CUB', type=str, 
