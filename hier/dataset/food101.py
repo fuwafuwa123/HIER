@@ -30,4 +30,24 @@ class Food101(BaseDataset):
                 image = Image.open(io.BytesIO(img_bytes)).convert('RGB')
                 _ = image.size  # test lỗi ảnh
             except Exception as e:
-                print(f"[Skip] Error reading image at index {i}: {e
+                print(f"[Skip] Error reading image at index {i}: {e}")
+                continue
+
+            self.ys.append(label)
+            self.I.append(index)
+            self.images.append(image)
+            index += 1
+
+        BaseDataset.__init__(self, self.root, self.mode, self.transform)
+
+    def __getitem__(self, index):
+        image = self.images[index]
+        try:
+            if self.transform:
+                image = self.transform(image)
+        except Exception as e:
+            print(f"[Warning] Error processing image at index {index}: {e}")
+            return self.__getitem__((index + 1) % len(self))
+
+        label = self.ys[index]
+        return image, label, index
