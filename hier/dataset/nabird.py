@@ -28,11 +28,11 @@ class NABirds(BaseDataset):
         index = 0
         for img_path, label in dataset.imgs:
             class_folder = idx_to_classname[label]
-            class_id = class_map[class_folder]  # NABirds class_id (int)
+            class_id = class_map[class_folder]  
 
             fn = img_path.split('/')[-1]
-            if label in self.classes and not fn.startswith('._'):
-                self.ys.append(label)
+            if class_id in self.classes and not fn.startswith('._'):
+                self.ys.append(class_id)
                 self.I.append(index)
                 self.im_paths.append(self.root + '/images/' + class_folder + '/' + fn)
 
