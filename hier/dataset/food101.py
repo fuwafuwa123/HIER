@@ -13,7 +13,7 @@ class Food101(BaseDataset):
         else:
             self.classes = list(range(99, 102))
 
-        dataset = load_dataset("food101", split=mode)
+        dataset = load_dataset("ethz/food101", split=mode)
 
         index = 0
         for i, item in enumerate(dataset):
@@ -30,7 +30,7 @@ class Food101(BaseDataset):
 
             self.ys.append(label)
             self.I.append(index)
-            self.im_paths.append(image)  # ❗Lưu trực tiếp ảnh PIL vào im_paths
+            self.im_paths.append(image)  
             index += 1
 
         BaseDataset.__init__(self, self.root, self.mode, self.transform)
