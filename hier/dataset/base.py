@@ -28,7 +28,7 @@ class BaseDataset(torch.utils.data.Dataset):
             if isinstance(im, str):
                 im = PIL.Image.open(im)
             # convert gray to rgb
-            if len(list(im.split())) == 1 : im = im.convert('RGB') 
+            im = im.convert('RGB') 
             if self.transform is not None:
                 im = self.transform(im)
             return im
