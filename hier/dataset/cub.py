@@ -18,7 +18,7 @@ class CUBirds(BaseDataset):
             y = i[1]
             # fn needed for removing non-images starting with `._`
             fn = os.path.split(i[0])[1]
-            if y in self.classes and fn[:2] != '._':
+            if y in self.classes:
                 self.ys += [y]
                 self.I += [index]
                 self.im_paths.append(os.path.join(self.root, i[0]))
