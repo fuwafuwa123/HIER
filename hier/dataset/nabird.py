@@ -1,23 +1,18 @@
 from .base import *
-import torchvision
+from PIL import Image
 
 class NABirds(BaseDataset):
     def __init__(self, root, mode, transform=None):
         self.root = root + '/nabirds'
         self.mode = mode
         self.transform = transform
-
-        self.hierarchy = load_hierarchy_txt(self.root + '/hierarchy.txt')
         self.hierarchical_labels = []
 
-        # Load mapping: folder name → NABirds class_id
-        class_map = load_class_mapping(self.root + '/classes.txt')
+        self.hierarchy = load_hierarchy_txt(self.root + '/hierarchy.txt')
+        image_paths = load_image_paths(self.root + '/images.txt')
+        image_labels = load_image_labels(self.root + '/image_class_labels.txt')
 
-        # Load ImageFolder
-        dataset = torchvision.datasets.ImageFolder(root=os.path.join(self.root, 'images'))
-        idx_to_classname = {v: k for k, v in dataset.class_to_idx.items()}
-
-        # Define class ranges
+        # Set class split
         if self.mode == 'train':
             self.classes = range(0, 100)
         elif self.mode == 'eval':
@@ -26,37 +21,56 @@ class NABirds(BaseDataset):
         BaseDataset.__init__(self, self.root, self.mode, self.transform)
 
         index = 0
-        for img_path, label in dataset.imgs:
-            class_folder = idx_to_classname[label]
-            class_id = class_map[int(class_folder)] 
+        for img_id in image_paths:
+            path = self.root + '/images/' + image_paths[img_id]
+            class_id = image_labels[img_id] - 1  # 1-based to 0-based
 
-            fn = img_path.split('/')[-1]
-            if class_id in self.classes and not fn.startswith('._'):
+            if class_id in self.classes:
                 self.ys.append(class_id)
                 self.I.append(index)
-                self.im_paths.append(self.root + '/images/' + class_folder + '/' + fn)
+                self.im_paths.append(path)
 
                 if class_id in self.hierarchy:
                     self.hierarchical_labels.append(self.hierarchy[class_id])
                 else:
-                    print(f"[WARN] Class ID {class_id} not found in hierarchy.")
-                    self.hierarchical_labels.append([-1])  # fallback
+                    self.hierarchical_labels.append([-1])
 
                 index += 1
-        
+
+    def __getitem__(self, index):
+        im = Image.open(self.im_paths[index]).convert("RGB")
+        if self.transform:
+            im = self.transform(im)
+        label = self.ys[index]
+        hierarchy = self.hierarchical_labels[index]
+        return im, label, hierarchy
+
+
+def load_image_paths(file):
+    paths = {}
+    with open(file, 'r') as f:
+        for line in f:
+            img_id, rel_path = line.strip().split()
+            paths[img_id] = rel_path
+    return paths
+
+def load_image_labels(file):
+    labels = {}
+    with open(file, 'r') as f:
+        for line in f:
+            img_id, class_id = line.strip().split()
+            labels[img_id] = int(class_id)
+    return labels
 
 def load_hierarchy_txt(hierarchy_file):
     parent_map = {}
-    hierarchy_map = {}
     with open(hierarchy_file, 'r') as f:
         for line in f:
-            parts = line.strip().split()
-            if len(parts) == 2:
-                child, parent = map(int, parts)
-                parent_map[child] = parent
+            child, parent = map(int, line.strip().split())
+            parent_map[child] = parent
 
     hierarchy_map = {}
-    for child in parent_map.keys():
+    for child in parent_map:
         path = []
         current = child
         while current in parent_map and current != 0:
@@ -64,13 +78,5 @@ def load_hierarchy_txt(hierarchy_file):
             current = parent_map[current]
         if current != 0:
             path.insert(0, current)
-        hierarchy_map[child] = path
+        hierarchy_map[child - 1] = [p - 1 for p in path]  # adjust to 0-based
     return hierarchy_map
-
-def load_class_mapping(class_file):
-    class_map = {}
-    with open(class_file, 'r') as f:
-        for line in f:
-            id_str, folder = line.strip().split(maxsplit=1)
-            class_map[int(folder)] = int(id_str)
-    return class_map
