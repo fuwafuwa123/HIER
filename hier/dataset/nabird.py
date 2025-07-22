@@ -21,9 +21,9 @@ class NABirds(BaseDataset):
         BaseDataset.__init__(self, self.root, self.mode, self.transform)
 
         index = 0
-        for img_id in image_paths:
+        for img_id in image_paths.keys():
             path = self.root + '/images/' + image_paths[img_id]
-            class_id = image_labels[img_id] - 1  # 1-based to 0-based
+            class_id = image_labels[img_id] - 1  # convert to 0-based
 
             if class_id in self.classes:
                 self.ys.append(class_id)
@@ -34,7 +34,6 @@ class NABirds(BaseDataset):
                     self.hierarchical_labels.append(self.hierarchy[class_id])
                 else:
                     self.hierarchical_labels.append([-1])
-
                 index += 1
 
     def __getitem__(self, index):
