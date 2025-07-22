@@ -36,7 +36,7 @@ class NABirds(BaseDataset):
                 self.ys.append(class_id)
                 self.I.append(index)
                 self.im_paths.append(path)
-                self.hierarchical_labels.append(self.hierarchy.get(class_id, [-1]))
+                self.hierarchical_labels.append(self.hierarchy.get(class_id, [class_id]))
                 index += 1
 
     def __getitem__(self, index):
