@@ -15,9 +15,8 @@ class Food101(BaseDataset):
             self.classes = list(range(0, 20))
         else:
             self.classes = list(range(99, 102))
-
-        # Tải dataset mà không decode sẵn ảnh để tránh UnicodeDecodeError
-        dataset = load_dataset("food101", split=mode, streaming=False).with_format("python", decode=False)
+            
+        dataset = load_dataset("food101", split=mode, streaming=False)
 
         index = 0
         for i, item in enumerate(dataset):
