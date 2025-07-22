@@ -29,14 +29,23 @@ class NABirds(BaseDataset):
         
 
 def load_hierarchy_txt(hierarchy_file):
-    """
-    Returns a dict: { category_id: [order_id, family_id, genus_id, species_id] }
-    """
+    parent_map = {}
     hierarchy_map = {}
     with open(hierarchy_file, 'r') as f:
         for line in f:
             parts = line.strip().split()
-            if len(parts) == 5:
-                cat_id = int(parts[0]) - 1  # NABirds is 1-indexed, subtract 1 to match ImageFolder
-                hierarchy_map[cat_id] = list(map(int, parts[1:]))
+            if len(parts) == 2:
+                child, parent = map(int, parts)
+                parent_map[child] = parent
+
+    hierarchy_map = {}
+    for child in parent_map.keys():
+        path = []
+        current = child
+        while current in parent_map and current != 0:
+            path.insert(0, current)
+            current = parent_map[current]
+        if current != 0:
+            path.insert(0, current)
+        hierarchy_map[child] = path
     return hierarchy_map
