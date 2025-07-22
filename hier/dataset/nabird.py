@@ -1,20 +1,19 @@
 from .base import *
-import os
 import torchvision
 
 class NABirds(BaseDataset):
     def __init__(self, root, mode, transform=None):
-        self.root = os.path.join(root, 'nabirds')
+        self.root = root + '/nabirds'
         self.mode = mode
         self.transform = transform
 
-        self.hierarchy = load_hierarchy_txt(os.path.join(self.root, 'hierarchy.txt'))
+        self.hierarchy = load_hierarchy_txt(self.root + '/hierarchy.txt')
         self.hierarchical_labels = []
 
-        # Load mapping from class folder name → NABirds class ID
-        class_map = load_class_mapping(os.path.join(self.root, 'classes.txt'))
+        # Load mapping: folder name → NABirds class_id
+        class_map = load_class_mapping(self.root + '/classes.txt')
 
-        # Load ImageFolder to get label → folder name mapping
+        # Load ImageFolder
         dataset = torchvision.datasets.ImageFolder(root=os.path.join(self.root, 'images'))
         idx_to_classname = {v: k for k, v in dataset.class_to_idx.items()}
 
@@ -29,19 +28,19 @@ class NABirds(BaseDataset):
         index = 0
         for img_path, label in dataset.imgs:
             class_folder = idx_to_classname[label]
-            class_id = class_map[class_folder]  # NABirds class_id (1-based)
+            class_id = class_map[class_folder]  # NABirds class_id (int)
 
-            fn = os.path.split(img_path)[1]
-            if label in self.classes and fn[:2] != '._':
+            fn = img_path.split('/')[-1]
+            if label in self.classes and not fn.startswith('._'):
                 self.ys.append(label)
                 self.I.append(index)
-                self.im_paths.append(os.path.join(self.root, img_path))
+                self.im_paths.append(self.root + '/images/' + class_folder + '/' + fn)
 
                 if class_id in self.hierarchy:
                     self.hierarchical_labels.append(self.hierarchy[class_id])
                 else:
-                    print(f"[WARN] Class ID {class_id} not found in hierarchy")
-                    self.hierarchical_labels.append([-1])  # optional fallback
+                    print(f"[WARN] Class ID {class_id} not found in hierarchy.")
+                    self.hierarchical_labels.append([-1])  # fallback
 
                 index += 1
         
@@ -75,8 +74,3 @@ def load_class_mapping(class_file):
             id_str, folder = line.strip().split()
             class_map[folder] = int(id_str)
     return class_map
-
-class_map = load_class_mapping(os.path.join(self.root, 'classes.txt'))
-
-dataset = torchvision.datasets.ImageFolder(root=os.path.join(self.root, 'images'))
-idx_to_classname = {v: os.path.basename(k) for k, v in dataset.class_to_idx.items()}
