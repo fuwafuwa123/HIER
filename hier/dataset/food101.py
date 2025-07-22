@@ -10,9 +10,9 @@ class Food101(BaseDataset):
         self.ys, self.I, self.images = [], [], []
 
         if mode == 'train':
-            self.classes = list(range(0, 101))
+            self.classes = list(range(0, 10))
         else:
-            self.classes = list(range(101, 102))  # hoặc giữ là 0–100 nếu muốn test đủ class
+            self.classes = list(range(99, 102))  # hoặc giữ là 0–100 nếu muốn test đủ class
 
         # Load dữ liệu từ Hugging Face
         dataset = load_dataset("food101", split=mode)
