@@ -12,38 +12,40 @@ class NABirds(BaseDataset):
         image_paths = load_image_paths(self.root + '/images.txt')
         image_labels = load_image_labels(self.root + '/image_class_labels.txt')
 
-        # Set class split
+        # Xác định tập class
+        all_classes = sorted(set(image_labels.values()))
+        all_classes = [c - 1 for c in all_classes]  # convert to 0-based
+        num_classes = len(all_classes)
+        split = num_classes // 2
+
         if self.mode == 'train':
-            self.classes = range(0, 100)
+            self.classes = set(all_classes[:split])
         elif self.mode == 'eval':
-            self.classes = range(100, 200)
+            self.classes = set(all_classes[split:])
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
 
         BaseDataset.__init__(self, self.root, self.mode, self.transform)
 
         index = 0
-        for img_id in image_paths.keys():
-            path = self.root + '/images/' + image_paths[img_id]
+        for img_id, rel_path in image_paths.items():
             class_id = image_labels[img_id] - 1  # convert to 0-based
+            path = f"{self.root}/images/{rel_path}"
 
             if class_id in self.classes:
                 self.ys.append(class_id)
                 self.I.append(index)
                 self.im_paths.append(path)
-
-                if class_id in self.hierarchy:
-                    self.hierarchical_labels.append(self.hierarchy[class_id])
-                else:
-                    self.hierarchical_labels.append([-1])
+                self.hierarchical_labels.append(self.hierarchy.get(class_id, [-1]))
                 index += 1
 
     def __getitem__(self, index):
         im = Image.open(self.im_paths[index]).convert("RGB")
         if self.transform:
             im = self.transform(im)
-        label = self.ys[index]
-        hierarchy = self.hierarchical_labels[index]
-        return im, label, hierarchy
+        return im, self.ys[index], self.hierarchical_labels[index]
 
+# --------- Loaders ---------
 
 def load_image_paths(file):
     paths = {}
@@ -77,5 +79,5 @@ def load_hierarchy_txt(hierarchy_file):
             current = parent_map[current]
         if current != 0:
             path.insert(0, current)
-        hierarchy_map[child - 1] = [p - 1 for p in path]  # adjust to 0-based
+        hierarchy_map[child - 1] = [p - 1 for p in path]  # 0-based
     return hierarchy_map
