@@ -10,9 +10,8 @@ class Food101(BaseDataset):
 
         self.classes = list(range(0, 20)) if mode == 'train' else list(range(99, 102))
 
-       
+        # ✅ KHÔNG dùng decode=False – Hugging Face tự decode thành PIL.Image
         dataset = load_dataset("ethz/food101", split=mode, streaming=True)
-        dataset = dataset.with_format("python", decode=False)  # ✅ đây là cách đúng
 
         index = 0
         for i, item in enumerate(dataset):
@@ -21,13 +20,13 @@ class Food101(BaseDataset):
                 continue
 
             try:
-                img_bytes = item['image']['bytes']
-                image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+                image = item['image']  # đã là PIL.Image
+                _ = image.size  # kiểm tra ảnh có lỗi không
             except Exception as e:
                 print(f"[Skip] Error reading image at index {i}: {e}")
                 continue
 
             self.ys.append(label)
             self.I.append(index)
-            self.im_paths.append(image)
+            self.im_paths.append(image)  # không cần decode thủ công
             index += 1
