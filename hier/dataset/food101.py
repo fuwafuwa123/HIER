@@ -13,7 +13,7 @@ class Food101(BaseDataset):
         else:
             self.classes = list(range(99, 102))
 
-        dataset = load_dataset("ethz/food101", split=mode, streaming=True)
+        dataset = load_dataset("ethz/food101", split=mode, streaming=True, **{"decode": False})
 
         index = 0
         for i, item in enumerate(dataset):
