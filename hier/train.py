@@ -25,7 +25,7 @@ from losses import *
 
 from sampler import  UniqueClassSampler, BalancedSampler
 from helpers import get_emb, evaluate
-from dataset import CUBirds, SOP, Cars, Food101
+from dataset import CUBirds, SOP, Cars, Food101, NABirds
 from dataset.Inshop import Inshop_Dataset
 from models.model import init_model
         
@@ -105,7 +105,7 @@ def get_args_parser():
     
     # Misc
     parser.add_argument('--dataset', default='CUB', type=str, 
-                        choices=["SOP", "CUB", "Cars", "Inshop", "Food101"], help='Please specify dataset to train')
+                        choices=["SOP", "CUB", "Cars", "Inshop", "Food101", "NABirds"], help='Please specify dataset to train')
     parser.add_argument('--data_path', default='/kaggle/working/HIER/data', type=str,
         help='Please specify path to the ImageNet training data.')
     parser.add_argument('--output_dir', default="./logs/", type=str, help='Path to save logs and checkpoints.')
@@ -222,7 +222,7 @@ if __name__ == "__main__":
         mean_std = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
 
     train_tr = utils.MultiTransforms(mean_std, model=args.model, view=args.global_crops_number)
-    ds_list = {"CUB": CUBirds, "SOP": SOP, "Cars": Cars, "Inshop": Inshop_Dataset, "Food101": Food101}
+    ds_list = {"CUB": CUBirds, "SOP": SOP, "Cars": Cars, "Inshop": Inshop_Dataset, "Food101": Food101, "NABirds": NABirds}
     ds_class = ds_list[args.dataset]
     ds_train = ds_class(args.data_path, "train", train_tr)
     nb_classes = len(list(set(ds_train.ys)))
