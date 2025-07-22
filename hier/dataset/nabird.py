@@ -4,7 +4,7 @@ import torchvision
 
 class NABirds(BaseDataset):
     def __init__(self, root, mode, transform=None):
-        self.root = root + '/nabirds'
+        self.root = os.path.join(root, 'nabirds')
         self.mode = mode
         self.transform = transform
 
