@@ -17,7 +17,7 @@ class Food101(BaseDataset):
             self.classes = list(range(99, 102))
 
         # BẮT BUỘC phải có decode=False
-        dataset = load_dataset("food101", split=mode, decode=False)
+        dataset = load_dataset("food101", split=mode, streaming=True)
 
         index = 0
         for i, item in enumerate(dataset):
