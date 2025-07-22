@@ -5,17 +5,14 @@ import io
 
 class Food101(BaseDataset):
     def __init__(self, root, mode='train', transform=None):
-        self.root = root
-        self.mode = mode
-        self.transform = transform
+        super().__init__(root, mode, transform)
         self.ys, self.I, self.im_paths = [], [], []
 
-        if mode == 'train':
-            self.classes = list(range(0, 20))
-        else:
-            self.classes = list(range(99, 102))
+        self.classes = list(range(0, 20)) if mode == 'train' else list(range(99, 102))
 
-        dataset = load_dataset("ethz/food101", split=mode, streaming=True, **{"decode": False})
+       
+        dataset = load_dataset("ethz/food101", split=mode, streaming=True)
+        dataset = dataset.with_format("python", decode=False)  # ✅ đây là cách đúng
 
         index = 0
         for i, item in enumerate(dataset):
@@ -32,7 +29,5 @@ class Food101(BaseDataset):
 
             self.ys.append(label)
             self.I.append(index)
-            self.im_paths.append(image)  
+            self.im_paths.append(image)
             index += 1
-
-        BaseDataset.__init__(self, self.root, self.mode, self.transform)
