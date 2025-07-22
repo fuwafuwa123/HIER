@@ -13,7 +13,7 @@ class Food101(BaseDataset):
         else:
             self.classes = list(range(99, 102))
 
-        dataset = load_dataset("ethz/food101", split=mode)
+        dataset = load_dataset("ethz/food101", split=mode, streaming=True)
 
         index = 0
         for i, item in enumerate(dataset):
@@ -22,7 +22,7 @@ class Food101(BaseDataset):
                 continue
 
             try:
-                image = item['image']
+                image = item['image']['bytes']
                 _ = image.size  # kiểm tra ảnh hợp lệ
             except Exception as e:
                 print(f"[Skip] Error reading image at index {i}: {e}")
