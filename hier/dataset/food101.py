@@ -1,5 +1,7 @@
 from .base import *
 from datasets import load_dataset
+from PIL import Image
+import io
 
 class Food101(BaseDataset):
     def __init__(self, root, mode='train', transform=None):
@@ -22,8 +24,8 @@ class Food101(BaseDataset):
                 continue
 
             try:
-                image = item['image']
-                _ = image.size  # kiểm tra ảnh hợp lệ
+                img_bytes = item['image']['bytes']
+                image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
             except Exception as e:
                 print(f"[Skip] Error reading image at index {i}: {e}")
                 continue
