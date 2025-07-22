@@ -5,6 +5,8 @@ class NABirds(BaseDataset):
         self.root = root + '/nabirds'
         self.mode = mode
         self.transform = transform
+        self.hierarchy = load_hierarchy_txt(os.path.join(self.root, 'hierarchy.txt'))
+        self.hierarchical_labels = []
         if self.mode == 'train':
             self.classes = range(0,100)
         elif self.mode == 'eval':
@@ -22,4 +24,19 @@ class NABirds(BaseDataset):
                 self.ys += [y]
                 self.I += [index]
                 self.im_paths.append(os.path.join(self.root, i[0]))
+                self.hierarchical_labels.append(self.hierarchy[y])  # <-- Add this line
                 index += 1
+        
+
+def load_hierarchy_txt(hierarchy_file):
+    """
+    Returns a dict: { category_id: [order_id, family_id, genus_id, species_id] }
+    """
+    hierarchy_map = {}
+    with open(hierarchy_file, 'r') as f:
+        for line in f:
+            parts = line.strip().split()
+            if len(parts) == 5:
+                cat_id = int(parts[0]) - 1  # NABirds is 1-indexed, subtract 1 to match ImageFolder
+                hierarchy_map[cat_id] = list(map(int, parts[1:]))
+    return hierarchy_map
