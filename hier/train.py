@@ -286,6 +286,7 @@ if __name__ == "__main__":
     )
 
     cudnn.benchmark = True
+    best_train_recall = -1
     for epoch in range(args.epochs):
         if sampler is not None and args.IPC > 0:
             sampler.set_epoch(epoch)
@@ -308,18 +309,14 @@ if __name__ == "__main__":
 
         # Save best checkpoint based on R@1_head (only after warmup)
         if epoch % args.eval_freq == 0 and epoch >= args.warmup_epochs:
-            is_best = args.best_recall == train_stats.get("R@1_head", -1)
-            if is_best:
-                checkpoint_name = f"{args.model}_{args.loss}_best_epoch{epoch}.pth"
+            current_recall = train_stats.get("R@1_head", -1)
+            if current_recall > best_train_recall:
+                best_train_recall = current_recall  # Update best seen
+                checkpoint_name = f"{args.model}_{args.loss}_best_epoch{epoch}_R1h{current_recall:.4f}.pth"
                 save_path = os.path.join(dataset_log_dir, checkpoint_name)
                 utils.save_on_master(save_dict, save_path)
-            
-        log_stats = {**{f'train_{k}': v for k, v in train_stats.items()}, 'epoch': epoch}
-        if args.local_rank == 0:
-            with (Path("{}/{}/{}_{}_log.txt".format(args.output_dir, args.dataset, args.model, args.run_name))).open("a") as f:
-                f.write(json.dumps(log_stats) + "\n")
-            wandb.log(train_stats, step=epoch)
-        
+
+                
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))
