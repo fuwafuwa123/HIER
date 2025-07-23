@@ -1,7 +1,6 @@
 from .base import *
 from PIL import Image
-import io
-import warnings
+
 
 class Food101(BaseDataset):
     def __init__(self, root, mode='train', transform=None):
@@ -29,7 +28,7 @@ class Food101(BaseDataset):
 
         # Đọc metadata
         meta_file = 'train.txt' if self.mode == 'train' else 'test.txt'
-        meta_path = self.root + '/meta/meta' + meta_file
+        meta_path = self.root + '/meta/meta/' + meta_file
 
        
 
