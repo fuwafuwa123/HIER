@@ -312,7 +312,7 @@ if __name__ == "__main__":
             current_recall = train_stats.get("R@1_head", -1)
             if current_recall > best_train_recall:
                 best_train_recall = current_recall  # Update best seen
-                checkpoint_name = f"{args.model}_{args.loss}_best_epoch{epoch}_R1h{current_recall:.4f}.pth"
+                checkpoint_name = f"{args.model}_{args.loss}_hyperbolic{args.hyp_c}_best_epoch{epoch}_R1h{current_recall:.4f}.pth"
                 save_path = os.path.join(dataset_log_dir, checkpoint_name)
                 utils.save_on_master(save_dict, save_path)
 
