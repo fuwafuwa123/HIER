@@ -177,7 +177,7 @@ def train_one_epoch(model, sup_metric_loss, get_emb_s, data_loader, optimizer,
 
     rh_model = 0
     if epoch % args.eval_freq == 0 and epoch >= args.warmup_epochs:
-        if (args.dataset == "CUB" or args.dataset == "Cars") or epoch >= 40:
+        if (args.dataset == "CUB" or args.dataset == "Cars" or args.dataset == "Food101") or epoch >= 40:
             rh_model = evaluate(get_emb_s, args.dataset, args.hyp_c)
             return_dict.update({"R@1_head": rh_model})
 
@@ -287,6 +287,7 @@ if __name__ == "__main__":
 
     cudnn.benchmark = True
     best_train_recall = -1
+    best_ckpt_path = None
     for epoch in range(args.epochs):
         if sampler is not None and args.IPC > 0:
             sampler.set_epoch(epoch)
@@ -312,10 +313,28 @@ if __name__ == "__main__":
             current_recall = train_stats.get("R@1_head", -1)
             if current_recall > best_train_recall:
                 best_train_recall = current_recall  # Update best seen
-                checkpoint_name = f"{args.model}_{args.loss}_hyperbolic{args.hyp_c}_best_epoch{epoch}_R1h{current_recall:.4f}.pth"
-                save_path = os.path.join(dataset_log_dir, checkpoint_name)
-                utils.save_on_master(save_dict, save_path)
 
+                # Remove previous best checkpoint if it exists
+                if best_ckpt_path is not None and os.path.exists(best_ckpt_path):
+                    os.remove(best_ckpt_path)
+
+                # Save current best
+                checkpoint_name = f"{args.model}_{args.loss}_hyperbolic{args.hyp_c}_best_epoch{epoch}_R1h{current_recall:.4f}.pth"
+                best_ckpt_path = os.path.join(dataset_log_dir, checkpoint_name)
+                utils.save_on_master(save_dict, best_ckpt_path)
+
+                # Optionally write best stats to a text file
+                if args.local_rank == 0:
+                    with open(os.path.join(dataset_log_dir, "best_result.txt"), "w") as f:
+                        f.write(f"Best Epoch: {epoch}\n")
+                        f.write(f"Best R@1_head: {current_recall:.4f}\n")
+
+
+        log_stats = {**{f'train_{k}': v for k, v in train_stats.items()}, 'epoch': epoch}
+        if args.local_rank == 0:
+            with (Path("{}/{}/{}_{}_log.txt".format(args.output_dir, args.dataset, args.model, args.run_name))).open("a") as f:
+                f.write(json.dumps(log_stats) + "\n")
+            wandb.log(train_stats, step=epoch)
                 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
