@@ -8,17 +8,11 @@ class Food101(BaseDataset):
         self.mode = mode
         self.transform = transform
 
-        # Tạo danh sách class theo thứ tự alphabet
+        # Tạo class_to_id
         class_names = sorted(os.listdir(self.root + '/images'))
         self.class_to_id = {name: idx for idx, name in enumerate(class_names)}
 
-        # Chia lớp theo split thủ công
-        if self.mode == 'train':
-            self.classes = range(0, 100)
-        elif self.mode == 'eval':
-            self.classes = range(100, 200)
-      
-        # Khởi tạo các biến
+        # Khởi tạo
         self.ys = []
         self.I = []
         self.im_paths = []
@@ -33,12 +27,12 @@ class Food101(BaseDataset):
        
 
         metadata = open(meta_path)
-        for i, line in enumerate(metadata):
-            path = line.strip() + '.jpg'  # Ví dụ: 'apple_pie/101251.jpg'
-            class_name = path.split('/')[0]
-            class_id = self.class_to_id[class_name]
+        with open(meta_path) as metadata:
+            for i, line in enumerate(metadata):
+                path = line.strip() + '.jpg'
+                class_name = path.split('/')[0]
+                class_id = self.class_to_id[class_name]
 
-            if class_id in self.classes:
                 self.ys += [class_id]
                 self.I += [i]
                 self.im_paths.append(self.root + '/images/' + path)
