@@ -302,8 +302,17 @@ if __name__ == "__main__":
         }
         if fp16_scaler is not None:
             save_dict['fp16_scaler'] = fp16_scaler.state_dict()
-        if args.saveckp_freq and (epoch % args.saveckp_freq == 0) and epoch:
-            utils.save_on_master(save_dict, os.path.join(args.output_dir, f'checkpoint{epoch:04}.pth'))
+        
+        dataset_log_dir = os.path.join(args.output_dir, args.dataset)
+        Path(dataset_log_dir).mkdir(parents=True, exist_ok=True)
+
+        # Save best checkpoint based on R@1_head (only after warmup)
+        if epoch % args.eval_freq == 0 and epoch >= args.warmup_epochs:
+            is_best = args.best_recall == train_stats.get("R@1_head", -1)
+            if is_best:
+                checkpoint_name = f"{args.model}_{args.loss}_best_epoch{epoch}.pth"
+                save_path = os.path.join(dataset_log_dir, checkpoint_name)
+                utils.save_on_master(save_dict, save_path)
             
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()}, 'epoch': epoch}
         if args.local_rank == 0:

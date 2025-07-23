@@ -7,7 +7,7 @@ from hyptorch.pmath import mobius_matvec
 from utils import Identity, RGBToBGR, ScaleIntensities
 import PIL
 import multiprocessing
-
+import numpy as np
 
 class MultiSample:
     def __init__(self, transform, n=2):
@@ -123,3 +123,48 @@ def eval_dataset(model, dl, skip_head):
         all_y.append(y)
         all_index.append(index)
     return torch.cat(all_x), torch.cat(all_y), torch.cat(all_index)
+
+
+
+def calc_dcg(relevances):
+    """Compute Discounted Cumulative Gain (DCG)"""
+    relevances = np.asfarray(relevances)
+    if relevances.size:
+        return np.sum((2**relevances - 1) / np.log2(np.arange(2, relevances.size + 2)))
+    return 0.
+
+def calc_ndcg(y_true, y_pred, k=10):
+    """
+    y_true: [nb_samples] (ground truth labels)
+    y_pred: [nb_samples, k] (top-k predicted labels for each sample)
+    """
+    ndcg_scores = []
+    for true, pred in zip(y_true, y_pred):
+        relevances = [1 if true == p else 0 for p in pred[:k]]
+        dcg = calc_dcg(relevances)
+        idcg = calc_dcg(sorted(relevances, reverse=True))
+        ndcg = dcg / idcg if idcg > 0 else 0.
+        ndcg_scores.append(ndcg)
+    return np.mean(ndcg_scores)
+
+def calc_ap(y_true, y_pred, k=10):
+    """
+    Compute Average Precision for a single sample.
+    y_true: int (ground truth label)
+    y_pred: [k] (top-k predicted labels)
+    """
+    hits = 0
+    sum_precisions = 0
+    for i, p in enumerate(y_pred[:k]):
+        if p == y_true:
+            hits += 1
+            sum_precisions += hits / (i + 1)
+    return sum_precisions / hits if hits > 0 else 0.
+
+def calc_map(y_true, y_pred, k=10):
+    """
+    y_true: [nb_samples] (ground truth labels)
+    y_pred: [nb_samples, k] (top-k predicted labels for each sample)
+    """
+    ap_scores = [calc_ap(t, p, k) for t, p in zip(y_true, y_pred)]
+    return np.mean(ap_scores)
