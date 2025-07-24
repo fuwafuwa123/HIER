@@ -34,7 +34,7 @@ parser.add_argument('--resume', default='',
     help='Path of resuming model checkpoint'
 )
 
- parser.add_argument('--use_fp16', type=utils.bool_flag, default=True, help="""Whether or not
+parser.add_argument('--use_fp16', type=utils.bool_flag, default=True, help="""Whether or not
         to use half precision for training. Improves training time and memory requirements,
         but can provoke instability and slight decay of performance. We recommend disabling
         mixed precision if the loss is unstable, if reducing the patch size or if training with bigger ViTs.""")
