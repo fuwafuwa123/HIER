@@ -408,9 +408,6 @@ class ConeLoss_Angle(torch.nn.Module):
             X_hyp = self.to_hyperbolic(X)
             P_hyp = self.to_hyperbolic(P)
 
-            X_hyp = project_to_ball(X_hyp)
-            P_hyp = project_to_ball(P_hyp)
-
             X_norm = F.normalize(X_hyp, dim=-1)
             P_norm = F.normalize(P_hyp, dim=-1)
 
