@@ -248,7 +248,7 @@ def get_embeddings_and_paths(model, dataloader):
     image_paths = []
     
     with torch.no_grad():
-        for batch_idx, (x, y) in enumerate(dataloader):
+        for batch_idx, (x, y, indices) in enumerate(dataloader):
             # Get embeddings
             x = x.to(device)
             m = model(x)
@@ -257,9 +257,11 @@ def get_embeddings_and_paths(model, dataloader):
             
             # Get image paths for visualization
             if hasattr(dataloader.dataset, 'im_paths'):
-                start_idx = batch_idx * dataloader.batch_size
-                end_idx = min(start_idx + dataloader.batch_size, len(dataloader.dataset))
-                image_paths.extend(dataloader.dataset.im_paths[start_idx:end_idx])
+                for idx in indices:
+                    if idx < len(dataloader.dataset.im_paths):
+                        image_paths.append(dataloader.dataset.im_paths[idx])
+                    else:
+                        image_paths.append(f"Image_{idx}")
     
     embeddings = torch.cat(embeddings, dim=0)
     labels = torch.cat(labels, dim=0)
