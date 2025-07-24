@@ -147,7 +147,14 @@ def random_sampling(logits, noise_scale=1, temperature = 1, temperature2 = 1, ha
 
 def load_pretrained_weights(model, pretrained_weights, checkpoint_key, model_name, patch_size):
     if os.path.isfile(pretrained_weights):
-        state_dict = torch.load(pretrained_weights, map_location="cpu")
+        try:
+            # First try with weights_only=True (PyTorch 2.6+ default)
+            state_dict = torch.load(pretrained_weights, map_location="cpu", weights_only=True)
+        except Exception as e:
+            print(f"Failed to load with weights_only=True: {e}")
+            print("Retrying with weights_only=False (use only if you trust the checkpoint source)...")
+            # Fallback to weights_only=False for older checkpoints
+            state_dict = torch.load(pretrained_weights, map_location="cpu", weights_only=False)
         if checkpoint_key is not None and checkpoint_key in state_dict:
             print(f"Take key {checkpoint_key} in provided checkpoint dict")
             state_dict = state_dict[checkpoint_key]
@@ -239,7 +246,14 @@ def restart_from_checkpoint(ckp_path, run_variables=None, **kwargs):
     print("Found checkpoint at {}".format(ckp_path))
 
     # open checkpoint file
-    checkpoint = torch.load(ckp_path, map_location="cpu")
+    try:
+        # First try with weights_only=True (PyTorch 2.6+ default)
+        checkpoint = torch.load(ckp_path, map_location="cpu", weights_only=True)
+    except Exception as e:
+        print(f"Failed to load with weights_only=True: {e}")
+        print("Retrying with weights_only=False (use only if you trust the checkpoint source)...")
+        # Fallback to weights_only=False for older checkpoints
+        checkpoint = torch.load(ckp_path, map_location="cpu", weights_only=False)
 
     # key is what to look for in the checkpoint file
     # value is the object to load

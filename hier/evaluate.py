@@ -77,7 +77,15 @@ model = model.to(device)
 if args.resume:
     if os.path.isfile(args.resume):
         print(f"Loading checkpoint from {args.resume}")
-        checkpoint = torch.load(args.resume, map_location=device)
+        try:
+            # First try with weights_only=True (PyTorch 2.6+ default)
+            checkpoint = torch.load(args.resume, map_location=device, weights_only=True)
+        except Exception as e:
+            print(f"Failed to load with weights_only=True: {e}")
+            print("Retrying with weights_only=False (use only if you trust the checkpoint source)...")
+            # Fallback to weights_only=False for older checkpoints
+            checkpoint = torch.load(args.resume, map_location=device, weights_only=False)
+        
         if 'student' in checkpoint:
             model.load_state_dict(checkpoint['student'])
         elif 'model' in checkpoint:
