@@ -12,7 +12,7 @@ from dataset import *
 from dataset.Inshop import Inshop_Dataset
 from models.model import init_model
 from utils import *
-from helpers import get_emb
+from helpers import get_emb, evaluate
 from tqdm import *
 
 seed = 1
@@ -182,6 +182,10 @@ else:
     # For other datasets, use evaluation set
     ds_ev = ds_class(args.data_path, "eval", eval_tr)
     dl_ev = DataLoader(ds_ev, batch_size=args.batch_size, shuffle=False, num_workers=4)
+
+def get_emb_s(ds_type="eval"):
+    """Wrapper function for get_emb to match the expected signature"""
+    return get_emb(model, ds_class, args.data_path, mean_std, ds_type=ds_type)
 
 def get_embeddings_and_paths(model, dataloader):
     """Extract embeddings and image paths from the dataset"""
@@ -375,24 +379,37 @@ def evaluate_cos_Inshop(model, dl_query, dl_gallery):
 # Main evaluation
 with torch.no_grad():
     print("**Evaluating...**")
-    if args.dataset == 'Inshop':
-        Recalls = evaluate_cos_Inshop(model, dl_query, dl_gallery)
-        # For Inshop dataset, visualization would need to be modified to handle query-gallery pairs
-        if args.visualize:
-            print("Visualization for Inshop dataset is not implemented in this version.")
-    elif args.dataset != 'SOP':
-        Recalls = evaluate_cos(model, dl_ev)
-        # Add visualization for non-SOP datasets
+    
+    # Use proper evaluation for hyperbolic embeddings
+    if args.hyp_c > 0:
+        print(f"Using hyperbolic evaluation with hyp_c={args.hyp_c}")
+        Recalls = evaluate(get_emb_s, args.dataset, args.hyp_c)
+        print(f"Final R@1: {Recalls:.4f}")
+        
+        # For visualization, we can still use the cosine similarity approach
         if args.visualize:
             print("\n**Starting Visualization...**")
             visualize_similar_images(model, dl_ev, args.query_index, args.top_k, args.save_viz)
     else:
-        Recalls = evaluate_cos_SOP(model, dl_ev)
-        # Add visualization for SOP dataset
-        if args.visualize:
-            print("\n**Starting Visualization...**")
-            visualize_similar_images(model, dl_ev, args.query_index, args.top_k, args.save_viz)
-
-print(f"Final R@1: {Recalls:.4f}")
+        # Use cosine similarity evaluation for non-hyperbolic embeddings
+        if args.dataset == 'Inshop':
+            Recalls = evaluate_cos_Inshop(model, dl_query, dl_gallery)
+            # For Inshop dataset, visualization would need to be modified to handle query-gallery pairs
+            if args.visualize:
+                print("Visualization for Inshop dataset is not implemented in this version.")
+        elif args.dataset != 'SOP':
+            Recalls = evaluate_cos(model, dl_ev)
+            # Add visualization for non-SOP datasets
+            if args.visualize:
+                print("\n**Starting Visualization...**")
+                visualize_similar_images(model, dl_ev, args.query_index, args.top_k, args.save_viz)
+        else:
+            Recalls = evaluate_cos_SOP(model, dl_ev)
+            # Add visualization for SOP dataset
+            if args.visualize:
+                print("\n**Starting Visualization...**")
+                visualize_similar_images(model, dl_ev, args.query_index, args.top_k, args.save_viz)
+        
+        print(f"Final R@1: {Recalls:.4f}")
 
     
