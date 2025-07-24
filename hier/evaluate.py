@@ -31,28 +31,9 @@ parser.add_argument('--dataset', required=True, type=str,
 parser.add_argument('--data_path', default='/kaggle/input', type=str,
         help='Please specify path to the dataset data.')
 
-parser.add_argument('--resume', default='',
-    help='Path of resuming model checkpoint'
+parser.add_argument('--resume', required=True,
+    help='Path to model checkpoint (required)'
 )
-
-parser.add_argument('--use_fp16', type=utils.bool_flag, default=True, help="""Whether or not
-        to use half precision for training. Improves training time and memory requirements,
-        but can provoke instability and slight decay of performance. We recommend disabling
-        mixed precision if the loss is unstable, if reducing the patch size or if training with bigger ViTs.""")
-parser.add_argument('--model', default='resnet50', type=str,
-        choices=['resnet50', 
-                 'deit_small_distilled_patch16_224', 'vit_small_patch16_224', 'dino_vits16'],
-        help="""Name of architecture to train. For quick experiments with ViTs,
-        we recommend using vit_tiny or vit_small.""")
-parser.add_argument('--image_size', type=int, default=224, help="""Size of Global Image""")
-parser.add_argument('--patch_size', default=16, type=int, help="""Size in pixels
-        of input square patches - default 16 (for 16x16 patches). Using smaller
-        values leads to better performance but requires more memory. Applies only
-        for ViTs (vit_tiny, vit_small and vit_base). If <16, we recommend disabling
-        mixed precision training (--use_fp16 false) to avoid unstabilities.""")
-parser.add_argument('--pool', default='token', type=str, choices=['token', 'avg'], help='ViT Pooling')
-parser.add_argument('--resize_size', type=int, default=256)
-parser.add_argument('--crop_size', type=int, default=224)
 
 parser.add_argument('--visualize', action='store_true',
     help='Enable visualization of top-k similar images'
@@ -70,11 +51,6 @@ parser.add_argument('--save-viz', default=None,
 parser.add_argument('--batch_size', default=90, type=int,
         help='Per-GPU batch-size : number of distinct images loaded on one GPU.')
 
-parser.add_argument('--bn_freeze', type=bool, default=True)
-parser.add_argument('--use_lastnorm', type=bool, default=True)
-parser.add_argument('--emb', default=128, type=int, help='Embedding dimension')
-parser.add_argument('--hyp_c', default=0.1, type=float, help='Hyperbolic curvature')
-parser.add_argument('--clip_r', default=2.3, type=float, help='Clip radius for hyperbolic space')
 parser.add_argument('--gpu_id', default=0, type=int, help='GPU ID to use')
 
 args = parser.parse_args()
@@ -84,74 +60,109 @@ device = torch.device(f'cuda:{args.gpu_id}' if torch.cuda.is_available() and arg
 if args.gpu_id >= 0:
     torch.cuda.set_device(args.gpu_id)
 
-# Initialize model
-model = init_model(args)
+# Load checkpoint first to get model configuration
+if not os.path.isfile(args.resume):
+    print(f"No checkpoint found at {args.resume}")
+    sys.exit(1)
+
+print(f"Loading checkpoint from {args.resume}")
+try:
+    # First try with weights_only=True (PyTorch 2.6+ default)
+    checkpoint = torch.load(args.resume, map_location=device, weights_only=True)
+except Exception as e:
+    print(f"Failed to load with weights_only=True: {e}")
+    print("Retrying with weights_only=False (use only if you trust the checkpoint source)...")
+    # Fallback to weights_only=False for older checkpoints
+    checkpoint = torch.load(args.resume, map_location=device, weights_only=False)
+
+# Extract model configuration from checkpoint
+if 'args' in checkpoint:
+    checkpoint_args = checkpoint['args']
+    print("Loaded model configuration from checkpoint:")
+    print(f"  Model: {checkpoint_args.model}")
+    print(f"  Embedding dimension: {checkpoint_args.emb}")
+    print(f"  Hyperbolic curvature: {checkpoint_args.hyp_c}")
+    print(f"  Clip radius: {checkpoint_args.clip_r}")
+    print(f"  Use last norm: {checkpoint_args.use_lastnorm}")
+    print(f"  BN freeze: {checkpoint_args.bn_freeze}")
+    print(f"  Pool: {checkpoint_args.pool}")
+    print(f"  Patch size: {checkpoint_args.patch_size}")
+    
+    # Use checkpoint args for model initialization
+    model_args = checkpoint_args
+else:
+    print("Warning: No 'args' found in checkpoint. Using default configuration.")
+    # Create a minimal args object with defaults
+    class DefaultArgs:
+        def __init__(self):
+            self.model = 'resnet50'
+            self.emb = 128
+            self.hyp_c = 0.1
+            self.clip_r = 2.3
+            self.use_lastnorm = True
+            self.bn_freeze = True
+            self.pool = 'token'
+            self.patch_size = 16
+            self.image_size = 224
+            self.resize_size = 256
+            self.crop_size = 224
+            self.use_fp16 = True
+    
+    model_args = DefaultArgs()
+
+# Initialize model with configuration from checkpoint
+model = init_model(model_args)
 model = model.to(device)
 
-# Load checkpoint if provided
-if args.resume:
-    if os.path.isfile(args.resume):
-        print(f"Loading checkpoint from {args.resume}")
-        try:
-            # First try with weights_only=True (PyTorch 2.6+ default)
-            checkpoint = torch.load(args.resume, map_location=device, weights_only=True)
-        except Exception as e:
-            print(f"Failed to load with weights_only=True: {e}")
-            print("Retrying with weights_only=False (use only if you trust the checkpoint source)...")
-            # Fallback to weights_only=False for older checkpoints
-            checkpoint = torch.load(args.resume, map_location=device, weights_only=False)
-        
-        # Handle different checkpoint formats
-        print(f"Checkpoint keys: {list(checkpoint.keys()) if isinstance(checkpoint, dict) else 'Not a dict'}")
-        
-        if 'student' in checkpoint:
-            print("Loading from 'student' key")
-            model.load_state_dict(checkpoint['student'])
-        elif 'stduent' in checkpoint:  # Handle typo in checkpoint key
-            print("Loading from 'stduent' key (typo)")
-            model.load_state_dict(checkpoint['stduent'])
-        elif 'model' in checkpoint:
-            print("Loading from 'model' key")
-            model.load_state_dict(checkpoint['model'])
-        elif 'state_dict' in checkpoint:
-            print("Loading from 'state_dict' key")
-            model.load_state_dict(checkpoint['state_dict'])
-        else:
-            # Try to load directly if it's a state dict
-            try:
-                print("Attempting to load checkpoint directly as state dict")
-                model.load_state_dict(checkpoint)
-            except Exception as e:
-                print(f"Failed to load checkpoint: {e}")
-                print("Available keys in checkpoint:", list(checkpoint.keys()) if isinstance(checkpoint, dict) else "Not a dict")
-                
-                # Try to find any key that might contain model weights
-                if isinstance(checkpoint, dict):
-                    for key in checkpoint.keys():
-                        if key not in ['optimizer', 'epoch', 'args', 'fp16_scaler']:
-                            try:
-                                print(f"Trying to load from key '{key}'")
-                                model.load_state_dict(checkpoint[key])
-                                print(f"Successfully loaded from key '{key}'")
-                                break
-                            except Exception as inner_e:
-                                print(f"Failed to load from key '{key}': {inner_e}")
-                                continue
-                    else:
-                        print("Could not find valid model weights in any key")
-                        raise e
-                else:
-                    raise e
-        print("Checkpoint loaded successfully")
-    else:
-        print(f"No checkpoint found at {args.resume}")
+# Load model weights from checkpoint
+print(f"Checkpoint keys: {list(checkpoint.keys()) if isinstance(checkpoint, dict) else 'Not a dict'}")
 
+if 'student' in checkpoint:
+    print("Loading from 'student' key")
+    model.load_state_dict(checkpoint['student'])
+elif 'stduent' in checkpoint:  # Handle typo in checkpoint key
+    print("Loading from 'stduent' key (typo)")
+    model.load_state_dict(checkpoint['stduent'])
+elif 'model' in checkpoint:
+    print("Loading from 'model' key")
+    model.load_state_dict(checkpoint['model'])
+elif 'state_dict' in checkpoint:
+    print("Loading from 'state_dict' key")
+    model.load_state_dict(checkpoint['state_dict'])
+else:
+    # Try to load directly if it's a state dict
+    try:
+        print("Attempting to load checkpoint directly as state dict")
+        model.load_state_dict(checkpoint)
+    except Exception as e:
+        print(f"Failed to load checkpoint: {e}")
+        print("Available keys in checkpoint:", list(checkpoint.keys()) if isinstance(checkpoint, dict) else "Not a dict")
+        
+        # Try to find any key that might contain model weights
+        if isinstance(checkpoint, dict):
+            for key in checkpoint.keys():
+                if key not in ['optimizer', 'epoch', 'args', 'fp16_scaler']:
+                    try:
+                        print(f"Trying to load from key '{key}'")
+                        model.load_state_dict(checkpoint[key])
+                        print(f"Successfully loaded from key '{key}'")
+                        break
+                    except Exception as inner_e:
+                        print(f"Failed to load from key '{key}': {inner_e}")
+                        continue
+            else:
+                print("Could not find valid model weights in any key")
+                raise e
+        else:
+            raise e
+
+print("Checkpoint loaded successfully")
 model.eval()
 
-# Set up data transforms
-if args.model.startswith("vit"):
+# Set up data transforms based on model type
+if model_args.model.startswith("vit"):
     mean_std = (0.5, 0.5, 0.5), (0.5, 0.5, 0.5)
-elif args.model == "bn_inception":
+elif model_args.model == "bn_inception":
     mean_std = (104, 117, 128), (1, 1, 1)
 else:
     mean_std = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
@@ -162,8 +173,8 @@ ds_class = ds_list[args.dataset]
 
 # Create evaluation transform
 eval_tr = T.Compose([
-    T.Resize(256, interpolation=Image.BICUBIC),
-    T.CenterCrop(224),
+    T.Resize(model_args.resize_size, interpolation=Image.BICUBIC),
+    T.CenterCrop(model_args.crop_size),
     T.ToTensor(),
     T.Normalize(*mean_std),
 ])
@@ -381,9 +392,9 @@ with torch.no_grad():
     print("**Evaluating...**")
     
     # Use proper evaluation for hyperbolic embeddings
-    if args.hyp_c > 0:
-        print(f"Using hyperbolic evaluation with hyp_c={args.hyp_c}")
-        Recalls = evaluate(get_emb_s, args.dataset, args.hyp_c)
+    if model_args.hyp_c > 0:
+        print(f"Using hyperbolic evaluation with hyp_c={model_args.hyp_c}")
+        Recalls = evaluate(get_emb_s, args.dataset, model_args.hyp_c)
         print(f"Final R@1: {Recalls:.4f}")
         
         # For visualization, we can still use the cosine similarity approach
