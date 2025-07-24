@@ -111,50 +111,92 @@ else:
     model_args = DefaultArgs()
 
 # Initialize model with configuration from checkpoint
+print(f"Initializing model with configuration:")
+print(f"  Model type: {model_args.model}")
+print(f"  Embedding dimension: {model_args.emb}")
+print(f"  Hyperbolic curvature: {model_args.hyp_c}")
+print(f"  Use last norm: {model_args.use_lastnorm}")
+print(f"  BN freeze: {model_args.bn_freeze}")
+
 model = init_model(model_args)
 model = model.to(device)
+
+# Print model structure for debugging
+print(f"Model structure:")
+print(f"  Model type: {type(model)}")
+print(f"  Body type: {type(model.body)}")
+print(f"  Last layer type: {type(model.last_layer)}")
+print(f"  Total parameters: {sum(p.numel() for p in model.parameters())}")
 
 # Load model weights from checkpoint
 print(f"Checkpoint keys: {list(checkpoint.keys()) if isinstance(checkpoint, dict) else 'Not a dict'}")
 
-if 'student' in checkpoint:
-    print("Loading from 'student' key")
-    model.load_state_dict(checkpoint['student'])
-elif 'stduent' in checkpoint:  # Handle typo in checkpoint key
-    print("Loading from 'stduent' key (typo)")
-    model.load_state_dict(checkpoint['stduent'])
-elif 'model' in checkpoint:
-    print("Loading from 'model' key")
-    model.load_state_dict(checkpoint['model'])
-elif 'state_dict' in checkpoint:
-    print("Loading from 'state_dict' key")
-    model.load_state_dict(checkpoint['state_dict'])
-else:
+def try_load_state_dict(model, state_dict, key_name=""):
+    """Try to load state dict with various fallback strategies"""
+    try:
+        # First try strict loading
+        model.load_state_dict(state_dict, strict=True)
+        print(f"Successfully loaded from {key_name} with strict=True")
+        return True
+    except Exception as e:
+        print(f"Failed to load from {key_name} with strict=True: {e}")
+        try:
+            # Try with strict=False
+            missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+            print(f"Successfully loaded from {key_name} with strict=False")
+            if missing_keys:
+                print(f"Missing keys: {missing_keys[:5]}..." if len(missing_keys) > 5 else f"Missing keys: {missing_keys}")
+            if unexpected_keys:
+                print(f"Unexpected keys: {unexpected_keys[:5]}..." if len(unexpected_keys) > 5 else f"Unexpected keys: {unexpected_keys}")
+            return True
+        except Exception as e2:
+            print(f"Failed to load from {key_name} with strict=False: {e2}")
+            return False
+
+def print_state_dict_info(state_dict, name=""):
+    """Print information about state dict keys"""
+    print(f"State dict {name} info:")
+    print(f"  Number of keys: {len(state_dict.keys())}")
+    print(f"  First 10 keys: {list(state_dict.keys())[:10]}")
+    if len(state_dict.keys()) > 10:
+        print(f"  Last 10 keys: {list(state_dict.keys())[-10:]}")
+
+# Try loading from different possible keys
+load_success = False
+for key in ['student', 'stduent', 'model', 'state_dict']:
+    if key in checkpoint:
+        print(f"Trying to load from '{key}' key")
+        print_state_dict_info(checkpoint[key], key)
+        if try_load_state_dict(model, checkpoint[key], key):
+            load_success = True
+            break
+
+if not load_success:
     # Try to load directly if it's a state dict
     try:
         print("Attempting to load checkpoint directly as state dict")
-        model.load_state_dict(checkpoint)
+        if try_load_state_dict(model, checkpoint, "checkpoint"):
+            load_success = True
     except Exception as e:
-        print(f"Failed to load checkpoint: {e}")
-        print("Available keys in checkpoint:", list(checkpoint.keys()) if isinstance(checkpoint, dict) else "Not a dict")
+        print(f"Failed to load checkpoint directly: {e}")
         
         # Try to find any key that might contain model weights
         if isinstance(checkpoint, dict):
             for key in checkpoint.keys():
                 if key not in ['optimizer', 'epoch', 'args', 'fp16_scaler']:
-                    try:
-                        print(f"Trying to load from key '{key}'")
-                        model.load_state_dict(checkpoint[key])
-                        print(f"Successfully loaded from key '{key}'")
+                    print(f"Trying to load from key '{key}'")
+                    if try_load_state_dict(model, checkpoint[key], key):
+                        load_success = True
                         break
-                    except Exception as inner_e:
-                        print(f"Failed to load from key '{key}': {inner_e}")
-                        continue
             else:
                 print("Could not find valid model weights in any key")
                 raise e
         else:
             raise e
+
+if not load_success:
+    print("Failed to load model weights from checkpoint")
+    sys.exit(1)
 
 print("Checkpoint loaded successfully")
 model.eval()
