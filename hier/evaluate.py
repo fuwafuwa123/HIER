@@ -101,12 +101,47 @@ if args.resume:
             # Fallback to weights_only=False for older checkpoints
             checkpoint = torch.load(args.resume, map_location=device, weights_only=False)
         
+        # Handle different checkpoint formats
+        print(f"Checkpoint keys: {list(checkpoint.keys()) if isinstance(checkpoint, dict) else 'Not a dict'}")
+        
         if 'student' in checkpoint:
+            print("Loading from 'student' key")
             model.load_state_dict(checkpoint['student'])
+        elif 'stduent' in checkpoint:  # Handle typo in checkpoint key
+            print("Loading from 'stduent' key (typo)")
+            model.load_state_dict(checkpoint['stduent'])
         elif 'model' in checkpoint:
+            print("Loading from 'model' key")
             model.load_state_dict(checkpoint['model'])
+        elif 'state_dict' in checkpoint:
+            print("Loading from 'state_dict' key")
+            model.load_state_dict(checkpoint['state_dict'])
         else:
-            model.load_state_dict(checkpoint)
+            # Try to load directly if it's a state dict
+            try:
+                print("Attempting to load checkpoint directly as state dict")
+                model.load_state_dict(checkpoint)
+            except Exception as e:
+                print(f"Failed to load checkpoint: {e}")
+                print("Available keys in checkpoint:", list(checkpoint.keys()) if isinstance(checkpoint, dict) else "Not a dict")
+                
+                # Try to find any key that might contain model weights
+                if isinstance(checkpoint, dict):
+                    for key in checkpoint.keys():
+                        if key not in ['optimizer', 'epoch', 'args', 'fp16_scaler']:
+                            try:
+                                print(f"Trying to load from key '{key}'")
+                                model.load_state_dict(checkpoint[key])
+                                print(f"Successfully loaded from key '{key}'")
+                                break
+                            except Exception as inner_e:
+                                print(f"Failed to load from key '{key}': {inner_e}")
+                                continue
+                    else:
+                        print("Could not find valid model weights in any key")
+                        raise e
+                else:
+                    raise e
         print("Checkpoint loaded successfully")
     else:
         print(f"No checkpoint found at {args.resume}")
