@@ -409,9 +409,9 @@ class ConeLoss_Angle(torch.nn.Module):
         pos_violations = F.relu(pos_angles - tau)
         pos_loss = self.scale * pos_violations.mean()
         
-        # Negative loss: maximize angles (push away from incorrect classes)
-        # We want negative angles to be as large as possible (close to π)
-        neg_loss = -self.scale * neg_angles.mean(dim=1).mean()  # Negative sign to maximize
+        # Negative loss: minimize angles to incorrect classes (equivalent to maximizing separation)
+        # We want negative angles to be as large as possible, so minimize (π - angle)
+        neg_loss = self.scale * (math.pi - neg_angles).mean(dim=1).mean()
         
         # Combine losses
         loss = pos_loss + neg_loss
