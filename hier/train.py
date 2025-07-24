@@ -95,7 +95,7 @@ def get_args_parser():
     parser.add_argument('--clip_r', type=float, default=2.3)
     parser.add_argument('--save_emb', type=utils.bool_flag, default=False)
     parser.add_argument('--best_recall', type=int, default=0)
-    parser.add_argument('--loss', default='PA', type=str, choices=['PA', 'MS', 'PNCA', 'SoftTriple', 'SupCon', 'HierachicalHyperbolicTriplet'])
+    parser.add_argument('--loss', default='PA', type=str, choices=['PA', 'MS', 'PNCA', 'SoftTriple', 'SupCon', 'Cone'])
     parser.add_argument('--cluster_start', default=0, type=int)
     parser.add_argument('--topk', default=30, type=int)
     parser.add_argument('--num_hproxies', default=512, type=int, help="""Dimensionality of output for [CLS] token.""")
