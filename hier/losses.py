@@ -336,15 +336,17 @@ class SupCon(torch.nn.Module):
         return loss
     
 class ConeLoss_Angle(torch.nn.Module):
-    def __init__(self, nb_classes, sz_embed, tau=math.pi/6, tau_neg=math.pi/3, hyp_c=0.0, margin=0.1, clip_r=2.3):
+    def __init__(self, nb_classes, sz_embed, tau=math.pi/4, tau_neg=math.pi/2, hyp_c=0.0, margin=0.1, clip_r=2.3, scale=10.0):
         torch.nn.Module.__init__(self)
         # Cone Loss Initialization
         self.nb_classes = nb_classes
         self.sz_embed = sz_embed
-        self.tau = tau
-        self.tau_neg = tau_neg
+        self.tau = tau  # Positive cone angle (45°)
+        self.tau_neg = tau_neg  # Negative cone angle (90°)
         self.hyp_c = hyp_c
         self.margin = margin
+        self.clip_r = clip_r
+        self.scale = scale  # Scaling factor for proper loss magnitude
         
         # Add ToPoincare layer for hyperbolic embeddings
         if hyp_c > 0:
@@ -402,17 +404,16 @@ class ConeLoss_Angle(torch.nn.Module):
         neg_mask = ~label_mask  # [B, C]
         neg_angles = angles[neg_mask].view(batch_size, -1)  # [B, C-1]
         
-        # Positive loss: penalize angles larger than tau (using softplus like Angular Loss)
-        pos_loss = F.softplus(pos_angles - tau)
+        # PROPER CONE LOSS: penalize violations of cone constraints
+        # Positive loss: penalize angles larger than tau (outside positive cone)
+        pos_violations = F.relu(pos_angles - tau)
+        pos_loss = self.scale * pos_violations.mean()
         
-        # Negative loss: penalize angles smaller than tau_neg (using softplus)
-        neg_loss = F.softplus(tau_neg - neg_angles)
+        # Negative loss: maximize angles (push away from incorrect classes)
+        # We want negative angles to be as large as possible (close to π)
+        neg_loss = -self.scale * neg_angles.mean(dim=1).mean()  # Negative sign to maximize
         
-        # Aggregate losses
-        pos_loss = pos_loss.mean()
-        neg_loss = neg_loss.mean(dim=1).mean()  # Average over negative classes, then over batch
-        
-        # Combine losses with equal weighting
+        # Combine losses
         loss = pos_loss + neg_loss
         
         return loss
