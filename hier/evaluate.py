@@ -39,6 +39,15 @@ parser.add_argument('--model', default='resnet50', type=str,
                  'deit_small_distilled_patch16_224', 'vit_small_patch16_224', 'dino_vits16'],
         help="""Name of architecture to train. For quick experiments with ViTs,
         we recommend using vit_tiny or vit_small.""")
+parser.add_argument('--image_size', type=int, default=224, help="""Size of Global Image""")
+parser.add_argument('--patch_size', default=16, type=int, help="""Size in pixels
+        of input square patches - default 16 (for 16x16 patches). Using smaller
+        values leads to better performance but requires more memory. Applies only
+        for ViTs (vit_tiny, vit_small and vit_base). If <16, we recommend disabling
+        mixed precision training (--use_fp16 false) to avoid unstabilities.""")
+parser.add_argument('--pool', default='token', type=str, choices=['token', 'avg'], help='ViT Pooling')
+parser.add_argument('--resize_size', type=int, default=256)
+parser.add_argument('--crop_size', type=int, default=224)
 
 parser.add_argument('--visualize', action='store_true',
     help='Enable visualization of top-k similar images'
@@ -59,7 +68,7 @@ parser.add_argument('--batch_size', default=90, type=int,
 parser.add_argument('--bn_freeze', type=bool, default=True)
 parser.add_argument('--use_lastnorm', type=bool, default=True)
 parser.add_argument('--emb', default=128, type=int, help='Embedding dimension')
-parser.add_argument('--hyp_c', default=0.0, type=float, help='Hyperbolic curvature')
+parser.add_argument('--hyp_c', default=0.1, type=float, help='Hyperbolic curvature')
 parser.add_argument('--clip_r', default=2.3, type=float, help='Clip radius for hyperbolic space')
 parser.add_argument('--gpu_id', default=0, type=int, help='GPU ID to use')
 
