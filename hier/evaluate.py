@@ -60,6 +60,7 @@ parser.add_argument('--bn_freeze', type=bool, default=True)
 parser.add_argument('--use_lastnorm', type=bool, default=True)
 parser.add_argument('--emb', default=128, type=int, help='Embedding dimension')
 parser.add_argument('--hyp_c', default=0.0, type=float, help='Hyperbolic curvature')
+parser.add_argument('--clip_r', default=2.3, type=float, help='Clip radius for hyperbolic space')
 parser.add_argument('--gpu_id', default=0, type=int, help='GPU ID to use')
 
 args = parser.parse_args()
