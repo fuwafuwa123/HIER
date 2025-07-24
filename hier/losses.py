@@ -233,10 +233,17 @@ class Contrastive_Angle(nn.Module):
         return loss
     
 class MSLoss_Angle(nn.Module):
-    def __init__(self):
+    def __init__(self, hyp_c=0.0):  # Add hyp_c parameter
         super().__init__()
+        self.hyp_c = hyp_c
         self.base = 0.5
         self.alpha, self.beta = 2, 50
+        
+        # Set similarity function based on hyp_c
+        if hyp_c > 0:
+            self.sim_f = lambda x, y: -dist_matrix(x, y, c=hyp_c)
+        else:
+            self.sim_f = lambda x, y: x @ y.t()
             
     def forward(self, X, y):
         """
@@ -256,9 +263,14 @@ class MSLoss_Angle(nn.Module):
         pos_mask = class_eq_mask * self_mask
         neg_mask = (1-class_eq_mask)
         
-        # compute logits
-        X = F.normalize(X)
-        logits =  F.linear(X, X) 
+        # compute logits using the appropriate similarity function
+        if self.hyp_c > 0:
+            # For hyperbolic, use hyperbolic distance directly
+            logits = self.sim_f(X, X)
+        else:
+            # For Euclidean, normalize and use cosine similarity
+            X = F.normalize(X)
+            logits = self.sim_f(X, X)
                
         pos_exp = torch.exp(-self.alpha * (logits - self.base)) * pos_mask
         neg_exp = torch.exp(self.beta * (logits - self.base)) * neg_mask
@@ -273,13 +285,14 @@ class MSLoss_Angle(nn.Module):
     
     
 class PALoss_Angle(torch.nn.Module):
-    def __init__(self, nb_classes, sz_embed, mrg = 0.1, alpha = 32):
+    def __init__(self, nb_classes, sz_embed, mrg = 0.1, alpha = 32, hyp_c=0.0):  # Add hyp_c parameter
         torch.nn.Module.__init__(self)
         # Proxy Anchor Initialization
         self.nb_classes = nb_classes
         self.sz_embed = sz_embed
         self.mrg = mrg
         self.alpha = alpha
+        self.hyp_c = hyp_c
         
         self.proxies = torch.nn.Parameter(torch.randn(self.nb_classes, self.sz_embed).cuda())
         nn.init.kaiming_normal_(self.proxies, mode='fan_out')
@@ -289,8 +302,15 @@ class PALoss_Angle(torch.nn.Module):
             P = self.proxies
         else:
             P = P[:self.nb_classes]
+        
+        # Use appropriate similarity function based on hyp_c
+        if self.hyp_c > 0:
+            # Use hyperbolic distance for hyperbolic embeddings
+            cos = -dist_matrix(X, P, c=self.hyp_c)
+        else:
+            # Use cosine similarity for Euclidean embeddings
+            cos = F.linear(F.normalize(X), F.normalize(P))
                 
-        cos = F.linear(F.normalize(X), F.normalize(P))  # Calcluate cosine similarity
         P_one_hot = F.one_hot(T, num_classes = self.nb_classes).float()        
         N_one_hot = 1 - P_one_hot
     
@@ -312,7 +332,7 @@ class PALoss_Angle(torch.nn.Module):
 
     
 class PNCALoss_Angle(torch.nn.Module):
-    def __init__(self, nb_classes, sz_embed, mrg = 0.1, alpha = 32, normalize=True):
+    def __init__(self, nb_classes, sz_embed, mrg = 0.1, alpha = 32, normalize=True, hyp_c=0.0):  # Add hyp_c parameter
         torch.nn.Module.__init__(self)
         # Proxy Anchor Initialization
         self.nb_classes = nb_classes
@@ -320,6 +340,7 @@ class PNCALoss_Angle(torch.nn.Module):
         self.mrg = mrg
         self.alpha = alpha
         self.normalize = normalize
+        self.hyp_c = hyp_c
         
         self.proxies = torch.nn.Parameter(torch.randn(self.nb_classes, self.sz_embed).cuda())
         nn.init.kaiming_normal_(self.proxies, mode='fan_out')
@@ -329,8 +350,15 @@ class PNCALoss_Angle(torch.nn.Module):
             P = self.proxies
         else:
             P = P[:self.nb_classes]
+        
+        # Use appropriate similarity function based on hyp_c
+        if self.hyp_c > 0:
+            # Use hyperbolic distance for hyperbolic embeddings
+            cos = -dist_matrix(X, P, c=self.hyp_c)
+        else:
+            # Use cosine similarity for Euclidean embeddings
+            cos = F.linear(F.normalize(X), F.normalize(P))
                 
-        cos = F.linear(F.normalize(X), F.normalize(P))  # Calcluate cosine similarity
         P_one_hot = F.one_hot(T, num_classes = self.nb_classes).float()        
         N_one_hot = 1 - P_one_hot
     

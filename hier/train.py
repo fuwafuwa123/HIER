@@ -242,13 +242,13 @@ if __name__ == "__main__":
     model = init_model(args)
     model = nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], broadcast_buffers=True, find_unused_parameters=(args.model == 'bn_inception'))
     if args.loss == 'MS':
-        sup_metric_loss = MSLoss_Angle().cuda()
+        sup_metric_loss = MSLoss_Angle(hyp_c=args.hyp_c).cuda()  # Pass hyp_c parameter
     elif args.loss == 'PA':
-        sup_metric_loss = PALoss_Angle(nb_classes=nb_classes, sz_embed = args.emb).cuda()
+        sup_metric_loss = PALoss_Angle(nb_classes=nb_classes, sz_embed = args.emb, hyp_c=args.hyp_c).cuda()  # Pass hyp_c parameter
     elif args.loss == 'SoftTriple':
         sup_metric_loss = SoftTripleLoss_Angle(nb_classes=nb_classes, sz_embed = args.emb).cuda()
     elif args.loss == 'PNCA':
-        sup_metric_loss = PNCALoss_Angle(nb_classes=nb_classes, sz_embed = args.emb).cuda()
+        sup_metric_loss = PNCALoss_Angle(nb_classes=nb_classes, sz_embed = args.emb, hyp_c=args.hyp_c).cuda()  # Pass hyp_c parameter
     elif args.loss =='SupCon':
         sup_metric_loss = SupCon(hyp_c=args.hyp_c, IPC=args.IPC).cuda()
     

@@ -341,7 +341,7 @@ def visualize_query_gallery_comparison(model, query_index=0, top_k=5, save_path=
     similarities = sim[0]  # Shape: [gallery_size]
     
     # Create relevance scores (1 if same class, 0 otherwise)
-    relevances = (gallery_labels == query_label).float()
+    relevances = (gallery_labels == query_label).float().to(similarities.device)
     
     # Sort by similarity (descending) and get indices
     sorted_similarities, sorted_indices = torch.sort(similarities, descending=True)
