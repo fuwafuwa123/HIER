@@ -400,37 +400,60 @@ class ConeLoss_Angle(torch.nn.Module):
         else:
             P = P[:self.nb_classes]
 
+        batch_size = X.shape[0]
         device = X.device
-        tau = min(self.tau, math.pi / 2 - self.margin)
-        tau_neg = max(self.tau_neg, tau + self.margin)
+        
+        # Ensure angles are within valid ranges
+        tau = torch.clamp(torch.tensor(self.tau, device=device), 0.0, math.pi/2 - self.margin)
+        tau_neg = torch.clamp(torch.tensor(self.tau_neg, device=device), tau + self.margin, math.pi - self.margin)
 
         if self.hyp_c > 0:
+            # Hyperbolic geometry
+            # Convert embeddings and proxies to hyperbolic space
             X_hyp = self.to_hyperbolic(X)
             P_hyp = self.to_hyperbolic(P)
-
-            X_norm = F.normalize(X_hyp, dim=-1)
-            P_norm = F.normalize(P_hyp, dim=-1)
-
-            cos_angles = torch.matmul(X_norm, P_norm.T)  # [B, C]
+            
+            # Calculate hyperbolic distances
+            distances = dist_matrix(X_hyp, P_hyp, c=self.hyp_c)  # [B, C]
+            
+            # Convert hyperbolic distances to angles using proper relationship
+            # For hyperbolic space: cos(angle) = 1 - 2 * tanh²(d/2)
+            cos_angles = 1 - 2 * torch.tanh(distances / 2) ** 2
+            
         else:
+            # Euclidean geometry
+            # Normalize embeddings and proxies for cosine similarity
             X_norm = F.normalize(X, p=2, dim=-1)
             P_norm = F.normalize(P, p=2, dim=-1)
-            cos_angles = torch.matmul(X_norm, P_norm.T)
+            
+            # Calculate cosine similarities
+            cos_angles = F.linear(X_norm, P_norm)  # [B, C]
 
-        cos_angles = torch.clamp(cos_angles, -1 + 1e-6, 1 - 1e-6)
+        # Ensure numerical stability for acos
+        cos_angles = torch.clamp(cos_angles, -1 + 1e-8, 1 - 1e-8)
         angles = torch.acos(cos_angles)
 
-        label_mask = torch.arange(self.nb_classes, device=device).unsqueeze(0) == T.unsqueeze(1)
-        pos_angles = angles[label_mask]
-        neg_angles = angles[~label_mask].view(X.shape[0], -1)
-
-        pos_loss = F.relu(pos_angles - tau).mean()
-        neg_loss = F.relu(tau_neg - neg_angles).mean()
-
-        loss = pos_loss + 0.5 * neg_loss
-        # Debug
-        with torch.no_grad():
-            print(f"[ConeLoss] PosAng: {pos_angles.mean():.3f}, NegAng: {neg_angles.mean():.3f}, Loss: {loss.item():.3f}")
-            print(f"[Norms] ||X||: {X.norm(dim=1).mean():.3f}")
-
+        # Create label mask for indexing
+        label_mask = torch.arange(self.nb_classes, device=device).unsqueeze(0) == T.unsqueeze(1)  # [B, C]
+        
+        # Positive angles (angles to correct class)
+        pos_angles = angles[label_mask]  # [B]
+        
+        # Negative angles (angles to incorrect classes)
+        neg_mask = ~label_mask  # [B, C]
+        neg_angles = angles[neg_mask].view(batch_size, -1)  # [B, C-1]
+        
+        # Positive loss: penalize angles larger than tau
+        pos_loss = F.relu(pos_angles - tau)
+        
+        # Negative loss: penalize angles smaller than tau_neg
+        neg_loss = F.relu(tau_neg - neg_angles)
+        
+        # Aggregate losses
+        pos_loss = pos_loss.mean()
+        neg_loss = neg_loss.mean(dim=1).mean()  # Average over negative classes, then over batch
+        
+        # Combine losses with equal weighting
+        loss = pos_loss + neg_loss
+        
         return loss
