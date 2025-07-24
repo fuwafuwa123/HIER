@@ -443,11 +443,11 @@ class ConeLoss_Angle(torch.nn.Module):
         neg_mask = ~label_mask  # [B, C]
         neg_angles = angles[neg_mask].view(batch_size, -1)  # [B, C-1]
         
-        # Positive loss: penalize angles larger than tau
-        pos_loss = F.relu(pos_angles - tau)
+        # Positive loss: penalize angles larger than tau (using softplus like Angular Loss)
+        pos_loss = F.softplus(pos_angles - tau)
         
-        # Negative loss: penalize angles smaller than tau_neg
-        neg_loss = F.relu(tau_neg - neg_angles)
+        # Negative loss: penalize angles smaller than tau_neg (using softplus)
+        neg_loss = F.softplus(tau_neg - neg_angles)
         
         # Aggregate losses
         pos_loss = pos_loss.mean()
