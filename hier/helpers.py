@@ -17,16 +17,34 @@ class MultiSample:
     def __call__(self, x):
         return tuple(self.transform(x) for _ in range(self.num))
 
-def evaluate(get_emb_f, ds_name, hyp_c):
-    if ds_name != "Inshop":
-        emb_head = get_emb_f(ds_type="eval")
-        recall_head = get_recall(*emb_head, *emb_head, ds_name, hyp_c)
-        
+def evaluate(get_emb_f, ds_name, hyp_c, metric="recall"):
+    """
+    Evaluate embeddings using specified metric.
+    Args:
+        get_emb_f: Function to get embeddings
+        ds_name: Dataset name
+        hyp_c: Hyperbolic curvature
+        metric: Evaluation metric ("recall" or "ndcg")
+    """
+    if metric == "ndcg":
+        if ds_name != "Inshop":
+            emb_head = get_emb_f(ds_type="eval")
+            ndcg_score = get_ndcg(emb_head[0], emb_head[1], emb_head[2], emb_head[0], emb_head[1], emb_head[2], ds_name, hyp_c)
+        else:
+            emb_head_query = get_emb_f(ds_type="query")
+            emb_head_gal = get_emb_f(ds_type="gallery")
+            ndcg_score = get_ndcg(emb_head_query[0], emb_head_query[1], emb_head_query[2], emb_head_gal[0], emb_head_gal[1], emb_head_gal[2], ds_name, hyp_c)
+        return ndcg_score
     else:
-        emb_head_query = get_emb_f(ds_type="query")
-        emb_head_gal = get_emb_f(ds_type="gallery")
-        recall_head = get_recall(*emb_head_query, *emb_head_gal, ds_name, hyp_c)
-    return recall_head\
+        # Original recall evaluation
+        if ds_name != "Inshop":
+            emb_head = get_emb_f(ds_type="eval")
+            recall_head = get_recall(emb_head[0], emb_head[1], emb_head[2], emb_head[0], emb_head[1], emb_head[2], ds_name, hyp_c)
+        else:
+            emb_head_query = get_emb_f(ds_type="query")
+            emb_head_gal = get_emb_f(ds_type="gallery")
+            recall_head = get_recall(emb_head_query[0], emb_head_query[1], emb_head_query[2], emb_head_gal[0], emb_head_gal[1], emb_head_gal[2], ds_name, hyp_c)
+        return recall_head
 
 
 def calc_recall_at_k(T, Y, k):
@@ -74,6 +92,92 @@ def get_recall(xq, yq, index_q, xg, yg, index_g, ds_name, hyp_c):
     recall = [recall_k(xq, yq, index_q, xg, yg, index_g, k) for k in k_list]
     print(recall)
     return recall[0]
+
+
+def get_ndcg(xq, yq, index_q, xg, yg, index_g, ds_name, hyp_c):
+    """
+    Calculate NDCG@k for image retrieval using cosine similarity.
+    Args:
+        xq: Query embeddings
+        yq: Query labels
+        index_q: Query indices
+        xg: Gallery embeddings
+        yg: Gallery labels
+        index_g: Gallery indices
+        ds_name: Dataset name
+        hyp_c: Hyperbolic curvature (0 for cosine similarity)
+    """
+    if ds_name == "SOP":
+        k_list = [1, 10, 100, 1000]
+    elif ds_name == "Inshop":
+        k_list = [1, 10, 20, 30]
+    else:
+        k_list = [1, 2, 4, 8]
+    
+    def part_ndcg_calculation(xq, yq, index_q, xg, yg, index_g, k):
+        if hyp_c > 0:
+            # Hyperbolic distance calculation
+            sim = torch.empty(len(xq), len(xg), device="cuda")
+            for i in range(len(xq)):
+                sim[i : i + 1] = -dist_matrix(xq[i : i + 1], xg, hyp_c)
+        else:
+            # Cosine similarity calculation
+            # Normalize embeddings for cosine similarity
+            xq_norm = torch.nn.functional.normalize(xq, p=2, dim=1)
+            xg_norm = torch.nn.functional.normalize(xg, p=2, dim=1)
+            sim = xq_norm @ xg_norm.T
+        
+        # Remove self-matches by setting similarity to very low value
+        sim_diff_idx = torch.where(index_g != index_q.unsqueeze(-1), sim, -torch.ones_like(sim) * 1e4)
+        
+        # Get top-k indices and similarities
+        top_k_similarities, top_k_indices = torch.topk(sim_diff_idx, k=k, dim=1)
+        
+        # Calculate NDCG for each query
+        ndcg_scores = []
+        for i in range(len(xq)):
+            query_label = yq[i]
+            retrieved_labels = yg[top_k_indices[i]]
+            
+            # Create relevance scores (1 if same class, 0 otherwise)
+            relevances = (retrieved_labels == query_label).float().cpu().numpy()
+            
+            # Calculate NDCG
+            dcg = calc_dcg(relevances)
+            idcg = calc_dcg(sorted(relevances, reverse=True))
+            ndcg = dcg / idcg if idcg > 0 else 0.0
+            ndcg_scores.append(ndcg)
+        
+        return np.mean(ndcg_scores)
+    
+    def ndcg_k(xq, yq, index_q, xg, yg, index_g, k, split_size=5000):
+        ndcg_scores = []
+        splits = range(0, len(xq), split_size)
+        
+        if split_size < len(xq):
+            for i in range(0, len(splits)-1):
+                split_ndcg = part_ndcg_calculation(
+                    xq[splits[i]:splits[i+1]], 
+                    yq[splits[i]:splits[i+1]], 
+                    index_q[splits[i]:splits[i+1]], 
+                    xg, yg, index_g, k
+                )
+                ndcg_scores.append(split_ndcg)
+        
+        # Handle the last split
+        last_split_ndcg = part_ndcg_calculation(
+            xq[splits[-1]:], 
+            yq[splits[-1]:], 
+            index_q[splits[-1]:], 
+            xg, yg, index_g, k
+        )
+        ndcg_scores.append(last_split_ndcg)
+        
+        return np.mean(ndcg_scores)
+
+    ndcg_scores = [ndcg_k(xq, yq, index_q, xg, yg, index_g, k) for k in k_list]
+    print(f"NDCG@k scores: {ndcg_scores}")
+    return ndcg_scores[0]  # Return NDCG@1 by default
 
 
 def get_emb(model, ds, path, mean_std, resize=256, crop=224, ds_type="eval", world_size=1, skip_head=False):
