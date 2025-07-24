@@ -103,57 +103,6 @@ class HIERLoss(nn.Module):
         return loss
 
 
-# Triplet margin loss with hyperbolic distance
-class HyperbolicTripletMarginLoss(nn.Module):
-    def __init__(self, margin=0.1, c=1.0):
-        super().__init__()
-        self.margin = margin
-        self.c = c
-    
-    def hyperbolic_distance(x, y, c=1.0, eps=1e-5):
-        # Clamp norm to avoid instability
-        x_norm = x.norm(dim=-1, keepdim=True).clamp_max(1 - eps)
-        y_norm = y.norm(dim=-1, keepdim=True).clamp_max(1 - eps)
-        sqrt_c = c**0.5
-        diff = torch.cdist(x, y, p=2).clamp_min(eps)
-        
-        num = 2 * diff ** 2
-        denom = (1 - c * x_norm**2) * (1 - c * y_norm**2).transpose(0, 1)
-        dist = torch.acosh(1 + num / denom.clamp_min(eps))
-        return dist
-
-    def get_triplets(embeddings, labels, margin=0.1, semihard=True, dist_f=None):
-        batch_size = embeddings.size(0)
-        distances = dist_f(embeddings, embeddings)
-
-        triplets = []
-        for i in range(batch_size):
-            anchor_label = labels[i]
-            for j in range(batch_size):
-                if labels[j] != anchor_label:
-                    continue  # j must be positive
-                for k in range(batch_size):
-                    if labels[k] == anchor_label:
-                        continue  # k must be negative
-                    d_ap = distances[i, j]
-                    d_an = distances[i, k]
-                    if semihard:
-                        if d_ap < d_an and d_an - d_ap < margin:
-                            triplets.append((i, j, k))
-                    else:
-                        triplets.append((i, j, k))
-        return triplets
-
-    def forward(self, embeddings, triplets):
-        loss = 0.0
-        count = 0
-        for i, j, k in triplets:
-            d_ap = hyperbolic_distance(embeddings[i:i+1], embeddings[j:j+1], c=self.c)
-            d_an = hyperbolic_distance(embeddings[i:i+1], embeddings[k:k+1], c=self.c)
-            triplet_loss = F.relu(d_ap - d_an + self.margin)
-            loss += triplet_loss
-            count += 1
-        return loss / (count + 1e-8)
     
 class MSLoss(nn.Module):
     def __init__(self, tau=0.2, hyp_c=0.1):
@@ -423,4 +372,86 @@ class SupCon(torch.nn.Module):
                     loss += self.compute_loss(X[:, i], X[:, j])
                 step += 1
         loss /= step
+        return loss
+
+
+class ConeLoss_Angle(torch.nn.Module):
+    def __init__(self, nb_classes, sz_embed, tau=math.pi/6, tau_neg=math.pi/3, hyp_c=0.0, margin=0.1, clip_r=2.3):
+        torch.nn.Module.__init__(self)
+        # Cone Loss Initialization
+        self.nb_classes = nb_classes
+        self.sz_embed = sz_embed
+        self.tau = tau
+        self.tau_neg = tau_neg
+        self.hyp_c = hyp_c
+        self.margin = margin
+        self.clip_r = clip_r
+        
+        # Add ToPoincare layer for hyperbolic embeddings
+        if hyp_c > 0:
+            self.to_hyperbolic = hypnn.ToPoincare(c=hyp_c, ball_dim=sz_embed, riemannian=True, clip_r=clip_r, train_c=False)
+        
+        self.proxies = torch.nn.Parameter(torch.randn(self.nb_classes, self.sz_embed).cuda())
+        nn.init.kaiming_normal_(self.proxies, mode='fan_out')
+        
+    def forward(self, X, T, P=None):
+        if P is None:
+            P = self.proxies
+        else:
+            P = P[:self.nb_classes]
+        
+        batch_size = X.shape[0]
+        device = X.device
+        
+        # Ensure angles are within valid ranges
+        tau = torch.clamp(torch.tensor(self.tau, device=device), 0.0, math.pi/2 - self.margin)
+        tau_neg = torch.clamp(torch.tensor(self.tau_neg, device=device), tau + self.margin, math.pi - self.margin)
+        
+        if self.hyp_c > 0:
+            # Hyperbolic geometry
+            # Convert embeddings and proxies to hyperbolic space
+            X_hyp = self.to_hyperbolic(X)
+            P_hyp = self.to_hyperbolic(P)
+            
+            # Calculate hyperbolic distances
+            distances = dist_matrix(X_hyp, P_hyp, c=self.hyp_c)  # [B, C]
+            
+            # Convert hyperbolic distances to angles
+            cos_angles = 1 - 2 * torch.tanh(distances / 2) ** 2
+            cos_angles = torch.clamp(cos_angles, -1 + 1e-8, 1 - 1e-8)
+            angles = torch.acos(cos_angles)
+            
+        else:
+            # Euclidean geometry
+            X_norm = F.normalize(X, p=2, dim=-1)
+            P_norm = F.normalize(P, p=2, dim=-1)
+            
+            # Calculate cosine similarities
+            cos_similarities = F.linear(X_norm, P_norm)  # [B, C]
+            cos_similarities = torch.clamp(cos_similarities, -1 + 1e-8, 1 - 1e-8)
+            angles = torch.acos(cos_similarities)
+        
+        # Create label mask for indexing
+        label_mask = torch.arange(self.nb_classes, device=device).unsqueeze(0) == T.unsqueeze(1)  # [B, C]
+        
+        # Positive angles (angles to correct class)
+        pos_angles = angles[label_mask]  # [B]
+        
+        # Negative angles (angles to incorrect classes)
+        neg_mask = ~label_mask  # [B, C]
+        neg_angles = angles[neg_mask].view(batch_size, -1)  # [B, C-1]
+        
+        # Positive loss: penalize angles larger than tau
+        pos_loss = F.relu(pos_angles - tau)
+        
+        # Negative loss: penalize angles smaller than tau_neg
+        neg_loss = F.relu(tau_neg - neg_angles)
+        
+        # Aggregate losses
+        pos_loss = pos_loss.mean()
+        neg_loss = neg_loss.mean(dim=1).mean()  # Average over negative classes, then over batch
+           # Combine losses with equal weighting
+     
+        loss = pos_loss + neg_loss
+        
         return loss

@@ -249,6 +249,8 @@ if __name__ == "__main__":
         sup_metric_loss = SoftTripleLoss_Angle(nb_classes=nb_classes, sz_embed = args.emb).cuda()
     elif args.loss == 'PNCA':
         sup_metric_loss = PNCALoss_Angle(nb_classes=nb_classes, sz_embed = args.emb, hyp_c=args.hyp_c).cuda()  # Pass hyp_c parameter
+    elif args.loss == 'Cone':
+        sup_metric_loss = ConeLoss_Angle(nb_classes=nb_classes, sz_embed = args.emb, hyp_c=args.hyp_c).cuda()  # Automatic hyperbolic handling
     elif args.loss =='SupCon':
         sup_metric_loss = SupCon(hyp_c=args.hyp_c, IPC=args.IPC).cuda()
     
