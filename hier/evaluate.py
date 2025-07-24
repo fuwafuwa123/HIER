@@ -284,7 +284,12 @@ def find_top_k_similar(query_embedding, gallery_embeddings, k=5):
 
 def visualize_top_k(query_image_path, top_k_image_paths, top_k_scores, save_path=None):
     """Visualize query image and top-k similar images"""
-    fig, axes = plt.subplots(1, 6, figsize=(20, 4))
+    total_images = 1 + len(top_k_image_paths)
+    fig, axes = plt.subplots(1, total_images, figsize=(4*total_images, 4))
+    
+    # Handle single subplot case
+    if total_images == 1:
+        axes = [axes]
     
     # Load and display query image
     query_img = Image.open(query_image_path)
@@ -314,13 +319,13 @@ def visualize_similar_images(model, dataloader, query_index=0, top_k=5, save_pat
     print(f"Extracted embeddings shape: {embeddings.shape}")
     
     # Select query image
-    if query_index >= len(dataloader.dataset):
+    if query_index >= len(embeddings):
         print(f"Query index {query_index} is out of range. Using index 0.")
         query_index = 0
     
     query_embedding = embeddings[query_index:query_index+1]
     query_label = labels[query_index]
-    query_image_path = image_paths[query_index] if image_paths else f"Image {query_index}"
+    query_image_path = image_paths[query_index] if image_paths and query_index < len(image_paths) else f"Image {query_index}"
     
     print(f"Query image: {query_image_path}")
     print(f"Query label: {query_label}")
@@ -356,115 +361,20 @@ def visualize_similar_images(model, dataloader, query_index=0, top_k=5, save_pat
     else:
         print("\nCannot visualize: Some image paths are not valid or images don't exist")
 
-def evaluate_cos(model, dataloader):
-    """Evaluate using cosine similarity"""
-    print("Evaluating with cosine similarity...")
-    embeddings, labels, _ = get_embeddings_and_paths(model, dataloader)
-    
-    # Normalize embeddings
-    embeddings = F.normalize(embeddings, p=2, dim=1)
-    
-    # Compute similarity matrix
-    similarity = embeddings @ embeddings.T
-    
-    # Get top-k predictions for each query
-    k_list = [1, 2, 4, 8] if args.dataset not in ['SOP', 'Inshop'] else ([1, 10, 100, 1000] if args.dataset == 'SOP' else [1, 10, 20, 30])
-    
-    recalls = []
-    for k in k_list:
-        top_k_values, top_k_indices = torch.topk(similarity, k=k+1, dim=1)
-        
-        # Remove self-similarity
-        top_k_indices = top_k_indices[:, 1:]
-        
-        # Calculate recall@k
-        correct = 0
-        total = 0
-        for i, (query_label, top_k_labels) in enumerate(zip(labels, top_k_indices)):
-            if query_label in labels[top_k_labels]:
-                correct += 1
-            total += 1
-        
-        recall = correct / total if total > 0 else 0
-        recalls.append(recall)
-        print(f"R@{k}: {recall:.4f}")
-    
-    return recalls[0]  # Return R@1
 
-def evaluate_cos_SOP(model, dataloader):
-    """Evaluate SOP dataset specifically"""
-    return evaluate_cos(model, dataloader)
-
-def evaluate_cos_Inshop(model, dl_query, dl_gallery):
-    """Evaluate Inshop dataset specifically"""
-    print("Evaluating Inshop dataset...")
-    
-    # Get embeddings for query and gallery
-    query_embeddings, query_labels, _ = get_embeddings_and_paths(model, dl_query)
-    gallery_embeddings, gallery_labels, _ = get_embeddings_and_paths(model, dl_gallery)
-    
-    # Normalize embeddings
-    query_embeddings = F.normalize(query_embeddings, p=2, dim=1)
-    gallery_embeddings = F.normalize(gallery_embeddings, p=2, dim=1)
-    
-    # Compute similarity matrix
-    similarity = query_embeddings @ gallery_embeddings.T
-    
-    # Get top-k predictions
-    k_list = [1, 10, 20, 30]
-    recalls = []
-    
-    for k in k_list:
-        top_k_values, top_k_indices = torch.topk(similarity, k=k, dim=1)
-        
-        # Calculate recall@k
-        correct = 0
-        total = 0
-        for i, (query_label, top_k_labels) in enumerate(zip(query_labels, top_k_indices)):
-            if query_label in gallery_labels[top_k_labels]:
-                correct += 1
-            total += 1
-        
-        recall = correct / total if total > 0 else 0
-        recalls.append(recall)
-        print(f"R@{k}: {recall:.4f}")
-    
-    return recalls[0]  # Return R@1
 
 # Main evaluation
 with torch.no_grad():
     print("**Evaluating...**")
     
-    # Use proper evaluation for hyperbolic embeddings
-    if model_args.hyp_c > 0:
-        print(f"Using hyperbolic evaluation with hyp_c={model_args.hyp_c}")
-        Recalls = evaluate(get_emb_s, args.dataset, model_args.hyp_c)
-        print(f"Final R@1: {Recalls:.4f}")
-        
-        # For visualization, we can still use the cosine similarity approach
-        if args.visualize:
-            print("\n**Starting Visualization...**")
-            visualize_similar_images(model, dl_ev, args.query_index, args.top_k, args.save_viz)
-    else:
-        # Use cosine similarity evaluation for non-hyperbolic embeddings
-        if args.dataset == 'Inshop':
-            Recalls = evaluate_cos_Inshop(model, dl_query, dl_gallery)
-            # For Inshop dataset, visualization would need to be modified to handle query-gallery pairs
-            if args.visualize:
-                print("Visualization for Inshop dataset is not implemented in this version.")
-        elif args.dataset != 'SOP':
-            Recalls = evaluate_cos(model, dl_ev)
-            # Add visualization for non-SOP datasets
-            if args.visualize:
-                print("\n**Starting Visualization...**")
-                visualize_similar_images(model, dl_ev, args.query_index, args.top_k, args.save_viz)
-        else:
-            Recalls = evaluate_cos_SOP(model, dl_ev)
-            # Add visualization for SOP dataset
-            if args.visualize:
-                print("\n**Starting Visualization...**")
-                visualize_similar_images(model, dl_ev, args.query_index, args.top_k, args.save_viz)
-        
-        print(f"Final R@1: {Recalls:.4f}")
+    # Use the evaluate function from helpers.py for all cases
+    print(f"Using evaluation with hyp_c={model_args.hyp_c}")
+    Recalls = evaluate(get_emb_s, args.dataset, model_args.hyp_c)
+    print(f"Final R@1: {Recalls:.4f}")
+    
+    # For visualization, we can still use the cosine similarity approach
+    if args.visualize:
+        print("\n**Starting Visualization...**")
+        visualize_similar_images(model, dl_ev, args.query_index, args.top_k, args.save_viz)
 
     
