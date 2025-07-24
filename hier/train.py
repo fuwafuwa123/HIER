@@ -251,6 +251,8 @@ if __name__ == "__main__":
         sup_metric_loss = PNCALoss_Angle(nb_classes=nb_classes, sz_embed = args.emb).cuda()
     elif args.loss =='SupCon':
         sup_metric_loss = SupCon(hyp_c=args.hyp_c, IPC=args.IPC).cuda()
+    elif args.loss == 'Cone':
+        sup_metric_loss = ConeLoss_Angle(nb_classes=nb_classes, sz_embed = args.emb, hyp_c=args.hyp_c).cuda()
     
     
     params_groups = utils.get_params_groups(model, sup_metric_loss, fc_lr_scale=args.fc_lr_scale, weight_decay=args.weight_decay)
