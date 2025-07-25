@@ -6,6 +6,7 @@ import random
 import numpy as np
 
 from pytorch_metric_learning import miners, losses
+from pytorch_metric_learning.utils import loss_and_miner_utils as lmu
 import torch.distributed as dist
 
 import hyptorch.pmath as pmath
@@ -101,30 +102,6 @@ class HIERLoss(nn.Module):
         indices_tuple2 = self.get_reciprocal_triplets(sim_matrix2, topk=topk, t_per_anchor = 50)
         loss += self.compute_gHHC(lcas, lcas, all_dist_matrix[bs:, bs:], indices_tuple2, sim_matrix2)
         return loss
-
-
-class CentripetalLoss(nn.Module):
-    def __init__(self, margin=0.1, hyp_c=0.1):
-        super().__init__()
-        self.margin = margin
-        self.hyp_c = hyp_c
-        self.to_hyperbolic = hypnn.ToPoincare(c=hyp_c, ball_dim=sz_embed, riemannian=True, clip_r=clip_r, train_c=False)
-
-    def forward(self, child_embed, parent_embed):
-        """
-        child_embed: Tensor [batch_size, dim]
-        parent_embed: Tensor [batch_size, dim]
-        """
-        # Calculate distances from origin (0,0,...,0) for both embeddings
-        if self.hyp_c > 0:
-            # For hyperbolic space, use hyperbolic distance from origin
-            norm_child = dist_matrix(child_embed, torch.zeros_like(child_embed), c=self.hyp_c)
-            norm_parent = dist_matrix(parent_embed, torch.zeros_like(parent_embed), c=self.hyp_c)
-       
-
-        loss = torch.clamp(norm_parent - norm_child + self.margin, min=0)
-        return loss.mean()
-
     
 class MSLoss(nn.Module):
     def __init__(self, tau=0.2, hyp_c=0.1):
@@ -172,14 +149,13 @@ class MSLoss(nn.Module):
                 
         return loss
     
-    
 class Contrastive_Angle(nn.Module):
     def __init__(self, IPC, tau=0.2):
         torch.nn.Module.__init__(self)
         self.tau = 0.2
         self.sim_f = lambda x, y: F.linear(F.normalize(x), F.normalize(y))
     
-    def contrastive_loss(self, x0, x1):
+    def contrastive_loss(x, y):
         # x0 and x1 - positive pair
         # tau - temperature
         bsize = x0.shape[0]
@@ -231,7 +207,6 @@ class MSLoss_Angle(nn.Module):
                 
         return loss
     
-    
 class PALoss_Angle(torch.nn.Module):
     def __init__(self, nb_classes, sz_embed, mrg = 0.1, alpha = 32):
         torch.nn.Module.__init__(self)
@@ -268,8 +243,6 @@ class PALoss_Angle(torch.nn.Module):
         
         loss = (pos_term + neg_term)
         return loss
-    
-
     
 class PNCALoss_Angle(torch.nn.Module):
     def __init__(self, nb_classes, sz_embed, mrg = 0.1, alpha = 32, normalize=True):
@@ -356,4 +329,3 @@ class SupCon(torch.nn.Module):
                 step += 1
         loss /= step
         return loss
-    
