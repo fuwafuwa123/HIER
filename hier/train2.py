@@ -106,7 +106,7 @@ def get_args_parser():
     # Misc
     parser.add_argument('--dataset', default='CUB', type=str, 
                         choices=["SOP", "CUB", "Cars", "Inshop", "Food101", "NABirds"], help='Please specify dataset to train')
-    parser.add_argument('--data_path', default='/kaggle/working/HIER/data', type=str,
+    parser.add_argument('--data_path', default='/kaggle/input', type=str,
         help='Please specify path to the ImageNet training data.')
     parser.add_argument('--output_dir', default="./logs/", type=str, help='Path to save logs and checkpoints.')
     parser.add_argument('--run_name', default="", type=str, help='Wandb run name')
