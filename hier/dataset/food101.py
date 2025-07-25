@@ -6,7 +6,7 @@ import os
 import torchvision
 
 class Food101(BaseDataset):
-    def __init__(self, root, mode='train', transform=None, limit_per_class=200, num_classes=50):
+    def __init__(self, root, mode='train', transform=None, limit_per_class=500, num_classes=50):
         self.root = root + '/food41'
         self.mode = mode
         self.transform = transform
