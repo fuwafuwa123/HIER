@@ -103,6 +103,28 @@ class HIERLoss(nn.Module):
         return loss
 
 
+class CentripetalLoss(nn.Module):
+    def __init__(self, margin=0.1, hyp_c=0.1):
+        super().__init__()
+        self.margin = margin
+        self.hyp_c = hyp_c
+        self.to_hyperbolic = hypnn.ToPoincare(c=hyp_c, ball_dim=sz_embed, riemannian=True, clip_r=clip_r, train_c=False)
+
+    def forward(self, child_embed, parent_embed):
+        """
+        child_embed: Tensor [batch_size, dim]
+        parent_embed: Tensor [batch_size, dim]
+        """
+        # Calculate distances from origin (0,0,...,0) for both embeddings
+        if self.hyp_c > 0:
+            # For hyperbolic space, use hyperbolic distance from origin
+            norm_child = dist_matrix(child_embed, torch.zeros_like(child_embed), c=self.hyp_c)
+            norm_parent = dist_matrix(parent_embed, torch.zeros_like(parent_embed), c=self.hyp_c)
+       
+
+        loss = torch.clamp(norm_parent - norm_child + self.margin, min=0)
+        return loss.mean()
+
     
 class MSLoss(nn.Module):
     def __init__(self, tau=0.2, hyp_c=0.1):
@@ -157,7 +179,7 @@ class Contrastive_Angle(nn.Module):
         self.tau = 0.2
         self.sim_f = lambda x, y: F.linear(F.normalize(x), F.normalize(y))
     
-    def contrastive_loss(x, y):
+    def contrastive_loss(self, x0, x1):
         # x0 and x1 - positive pair
         # tau - temperature
         bsize = x0.shape[0]

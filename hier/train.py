@@ -95,7 +95,7 @@ def get_args_parser():
     parser.add_argument('--clip_r', type=float, default=2.3)
     parser.add_argument('--save_emb', type=utils.bool_flag, default=False)
     parser.add_argument('--best_recall', type=int, default=0)
-    parser.add_argument('--loss', default='PA', type=str, choices=['PA', 'MS', 'PNCA', 'SoftTriple', 'SupCon', 'Cone'])
+    parser.add_argument('--loss', default='PA', type=str, choices=['PA', 'MS', 'PNCA', 'SoftTriple', 'SupCon'])
     parser.add_argument('--cluster_start', default=0, type=int)
     parser.add_argument('--topk', default=30, type=int)
     parser.add_argument('--num_hproxies', default=512, type=int, help="""Dimensionality of output for [CLS] token.""")
@@ -121,7 +121,7 @@ def get_args_parser():
 
     return parser
 
-def train_one_epoch(model, sup_metric_loss, get_emb_s, data_loader, optimizer, 
+def train_one_epoch(model, cluster_loss, sup_metric_loss, get_emb_s, data_loader, optimizer, 
                     lr_schedule, epoch, fp16_scaler, args):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Epoch: [{}/{}]'.format(epoch, args.epochs)
@@ -146,29 +146,40 @@ def train_one_epoch(model, sup_metric_loss, get_emb_s, data_loader, optimizer,
             if args.loss == 'SupCon' and args.IPC > 0:
                 z = z.view(len(z) // args.IPC, args.IPC, args.emb)
             
-            if utils.get_world_size() > 1:
+            if world_size > 1:
                 z = utils.all_gather(z, args.local_rank)
                 y = utils.all_gather(y, args.local_rank)
             
-            loss = sup_metric_loss(z, y) * args.lambda1
+            loss1 = sup_metric_loss(z, y) * args.lambda1
+            if args.lambda2 > 0:
+                loss2 = cluster_loss(z, y, args.topk) * args.lambda2
+                if epoch < args.cluster_start:
+                    loss2 = loss2 * 0
+                loss = loss1 + loss2
+            else:
+                loss = loss1
         
         optimizer.zero_grad()
         with torch.autograd.set_detect_anomaly(False):
             if fp16_scaler is None:
                 loss.backward()
                 if args.clip_grad > 0:
-                    param_norms = utils.clip_gradients_value(model, 10, losses=[sup_metric_loss])
+                    param_norms = utils.clip_gradients_value(model, 10, losses=[cluster_loss, sup_metric_loss])
                 optimizer.step()
             else:
                 fp16_scaler.scale(loss).backward()
                 if args.clip_grad > 0:
                     fp16_scaler.unscale_(optimizer)  # unscale the gradients of optimizer's assigned params in-place
-                    param_norms = utils.clip_gradients_value(model, 10, losses=[sup_metric_loss])
+                    param_norms = utils.clip_gradients_value(model, 10, losses=[cluster_loss, sup_metric_loss])
+                    
+                    
                 fp16_scaler.step(optimizer)
                 fp16_scaler.update()
                 
         torch.cuda.synchronize()
-        metric_logger.update(metric_loss=loss.item())
+        metric_logger.update(metric_loss=loss1.item())
+        if args.lambda2 > 0:
+            metric_logger.update(cluster_loss=loss2.item())
         metric_logger.update(total_loss=loss.item())
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
         metric_logger.update(wd=optimizer.param_groups[0]["weight_decay"])
@@ -253,11 +264,9 @@ if __name__ == "__main__":
         sup_metric_loss = PNCALoss_Angle(nb_classes=nb_classes, sz_embed = args.emb).cuda()
     elif args.loss =='SupCon':
         sup_metric_loss = SupCon(hyp_c=args.hyp_c, IPC=args.IPC).cuda()
-    elif args.loss == 'Cone':
-        sup_metric_loss = ConeLoss_Angle(nb_classes=nb_classes, sz_embed = args.emb, hyp_c=args.hyp_c).cuda()
+
     
-    
-    params_groups = utils.get_params_groups(model, sup_metric_loss, fc_lr_scale=args.fc_lr_scale, weight_decay=args.weight_decay)
+    params_groups = utils.get_params_groups(model, sup_metric_loss, cluster_loss, fc_lr_scale=args.fc_lr_scale, weight_decay=args.weight_decay)
     if args.optimizer == "adamw":
         optimizer = torch.optim.AdamW(params_groups, eps=1e-4 if args.use_fp16 else 1e-8)  # to use with ViTs
     elif args.optimizer == "adamp":
@@ -297,7 +306,7 @@ if __name__ == "__main__":
         if sampler is not None and args.IPC > 0:
             sampler.set_epoch(epoch)
         # ============ training one epoch ... ============
-        train_stats = train_one_epoch(model, sup_metric_loss, get_emb_s, data_loader, optimizer, 
+        train_stats = train_one_epoch(model, sup_metric_loss, cluster_loss, get_emb_s, data_loader, optimizer, 
                                       lr_schedule, epoch, fp16_scaler, args)
 
         # ============ writing logs ... ============
