@@ -101,12 +101,13 @@ def get_args_parser():
     parser.add_argument('--num_hproxies', default=512, type=int, help="""Dimensionality of output for [CLS] token.""")
     parser.add_argument('--lambda1', default=1.0, type=float, help="""loss weight for metric learning
         loss over [CLS] tokens (Default: 1.0)""")
+    parser.add_argument('--lambda2', default=1.0, type=float, help="""loss weight for clustering loss over [CLS] tokens (Default: 1.0)""")
     parser.add_argument('--mrg', type=float, default=0.1)
     
     # Misc
     parser.add_argument('--dataset', default='CUB', type=str, 
                         choices=["SOP", "CUB", "Cars", "Inshop", "Food101", "NABirds"], help='Please specify dataset to train')
-    parser.add_argument('--data_path', default='/kaggle/working/HIER/data', type=str,
+    parser.add_argument('--data_path', default='/kaggle/input', type=str,
         help='Please specify path to the ImageNet training data.')
     parser.add_argument('--output_dir', default="./logs/", type=str, help='Path to save logs and checkpoints.')
     parser.add_argument('--run_name', default="", type=str, help='Wandb run name')
@@ -241,6 +242,7 @@ if __name__ == "__main__":
 
     model = init_model(args)
     model = nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], broadcast_buffers=True, find_unused_parameters=(args.model == 'bn_inception'))
+    cluster_loss = HIERLoss(args.num_hproxies, args.emb, mrg=args.mrg, hyp_c=args.hyp_c, clip_r=args.clip_r).cuda()
     if args.loss == 'MS':
         sup_metric_loss = MSLoss_Angle().cuda()
     elif args.loss == 'PA':
