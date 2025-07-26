@@ -329,3 +329,40 @@ class SupCon(torch.nn.Module):
                 step += 1
         loss /= step
         return loss
+
+
+class HyperbolicEntailmentConeLoss(torch.nn.Module):
+    def __init__(self, sz_embed ,tau=0.1, margin=0.1, clip_r=2.3, hyp_c=0.1):
+        super().__init__()
+        self.tau = tau
+        self.sz_embed = sz_embed
+        self.margin = margin
+        self.clip_r = clip_r
+        self.hyp_c = hyp_c
+        self.to_hyperbolic = hypnn.ToPoincare(c=hyp_c, ball_dim=sz_embed, riemannian=True, clip_r=clip_r, train_c=False)
+    
+    def hyperbolic_angle(self, a, b):
+        a_norm = F.normalize(a, p=2, dim=1)
+        b_proj = b - (b * a_norm).sum(dim=1, keepdim=True) * a_norm
+        angle = torch.acos(F.cosine_similarity(b_proj, a, dim=1))
+        return angle
+    
+    def forward(self, anchor, positive, negative):
+        # Clip to poincare ball
+        anchor = self.to_hyperbolic(anchor)
+        positive = self.to_hyperbolic(positive)
+        negative = self.to_hyperbolic(negative)
+        
+        # Compute hyperbolic angle
+        angle_ap = self.hyperbolic_angle(anchor, positive)
+        angle_an = self.hyperbolic_angle(anchor, negative)
+        
+        # Compute
+        loss_pos = F.relu(angle_ap - self.tau + self.margin)
+        loss_neg = F.relu(self.tau + self.margin - angle_an)
+        
+        # Compute loss
+        loss = loss_pos.mean() + loss_neg.mean()
+        return loss
+    
+    

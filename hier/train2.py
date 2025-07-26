@@ -95,13 +95,15 @@ def get_args_parser():
     parser.add_argument('--clip_r', type=float, default=2.3)
     parser.add_argument('--save_emb', type=utils.bool_flag, default=False)
     parser.add_argument('--best_recall', type=int, default=0)
-    parser.add_argument('--loss', default='MS', type=str, choices=['PA', 'MS', 'PNCA', 'SoftTriple', 'SupCon', 'Cone'])
+    parser.add_argument('--loss', default='MS', type=str, choices=['PA', 'MS', 'PNCA', 'SoftTriple', 'SupCon', 'HyperbolicEntailmentCone'])
     parser.add_argument('--cluster_start', default=0, type=int)
     parser.add_argument('--topk', default=30, type=int)
     parser.add_argument('--num_hproxies', default=512, type=int, help="""Dimensionality of output for [CLS] token.""")
     parser.add_argument('--lambda1', default=1.0, type=float, help="""loss weight for metric learning
         loss over [CLS] tokens (Default: 1.0)""")
     parser.add_argument('--mrg', type=float, default=0.1)
+    parser.add_argument('--tau', type=float, default=0.1)
+    parser.add_argument('--margin', type=float, default=0.1)
     
     # Misc
     parser.add_argument('--dataset', default='CUB', type=str, 
@@ -251,8 +253,8 @@ if __name__ == "__main__":
         sup_metric_loss = PNCALoss_Angle(nb_classes=nb_classes, sz_embed = args.emb).cuda()
     elif args.loss =='SupCon':
         sup_metric_loss = SupCon(hyp_c=args.hyp_c, IPC=args.IPC).cuda()
-    elif args.loss == 'Cone':
-        sup_metric_loss = ConeLoss_Angle(nb_classes=nb_classes, sz_embed = args.emb, hyp_c=args.hyp_c).cuda()
+    elif args.loss == 'HyperbolicEntailmentCone':
+        sup_metric_loss = HyperbolicEntailmentConeLoss(sz_embed=args.emb, tau=args.tau, margin=args.margin, clip_r=args.clip_r, hyp_c=args.hyp_c).cuda()
     
     
     params_groups = utils.get_params_groups(model, sup_metric_loss, fc_lr_scale=args.fc_lr_scale, weight_decay=args.weight_decay)
