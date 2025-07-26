@@ -343,10 +343,21 @@ class HyperbolicEntailmentConeLoss(torch.nn.Module):
     
     def hyperbolic_angle(self, a, b):
         """
-        Compute hyperbolic distance - don't clip to allow learning
+        Compute hyperbolic angle between two points in Poincaré ball
         """
-        dist = pmath.dist_matrix(a, b, c=self.hyp_c)
-        return dist.squeeze()
+        # Normalize vectors
+        a_norm = F.normalize(a, p=2, dim=1)
+        b_norm = F.normalize(b, p=2, dim=1)
+        
+        # Compute cosine similarity
+        cos_sim = F.cosine_similarity(a_norm, b_norm, dim=1)
+        
+        # Clamp to avoid numerical issues
+        cos_sim = torch.clamp(cos_sim, -self.clip_r, self.clip_r)
+        
+        # Compute angle
+        angle = torch.acos(cos_sim)
+        return angle
     
     def forward(self, X, y):
         batch_size = X.shape[0]
