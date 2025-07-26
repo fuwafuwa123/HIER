@@ -95,7 +95,7 @@ def get_args_parser():
     parser.add_argument('--clip_r', type=float, default=2.3)
     parser.add_argument('--save_emb', type=utils.bool_flag, default=False)
     parser.add_argument('--best_recall', type=int, default=0)
-    parser.add_argument('--loss', default='MS', type=str, choices=['PA', 'MS', 'PNCA', 'SoftTriple', 'SupCon', 'HyperbolicEntailmentCone'])
+    parser.add_argument('--loss', default='MS', type=str, choices=['PA', 'MS', 'AdaptiveMS', 'PNCA', 'SoftTriple', 'SupCon', 'HyperbolicEntailmentCone'])
     parser.add_argument('--cluster_start', default=0, type=int)
     parser.add_argument('--topk', default=30, type=int)
     parser.add_argument('--num_hproxies', default=512, type=int, help="""Dimensionality of output for [CLS] token.""")
@@ -267,6 +267,7 @@ if __name__ == "__main__":
         optimizer = torch.optim.Adam(params_groups, eps=1e-4 if args.use_fp16 else 1e-8)  # to use with ViTs
     elif args.optimizer == "sgd":
         optimizer = torch.optim.SGD(params_groups, momentum=0.9, lr=args.lr)  # lr is set by scheduler
+    
         
     fp16_scaler = None
     if args.use_fp16:

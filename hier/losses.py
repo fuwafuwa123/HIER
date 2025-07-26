@@ -347,22 +347,61 @@ class HyperbolicEntailmentConeLoss(torch.nn.Module):
         angle = torch.acos(F.cosine_similarity(b_proj, a, dim=1))
         return angle
     
-    def forward(self, anchor, positive, negative):
-        # Clip to poincare ball
-        anchor = self.to_hyperbolic(anchor)
-        positive = self.to_hyperbolic(positive)
-        negative = self.to_hyperbolic(negative)
+    def forward(self, X, y):
+        """
+        Wrapper to work with current training setup.
+        Creates triplets from batch data.
+        """
+        batch_size = X.shape[0]
+        device = X.device
         
-        # Compute hyperbolic angle
-        angle_ap = self.hyperbolic_angle(anchor, positive)
-        angle_an = self.hyperbolic_angle(anchor, negative)
+        # Convert to hyperbolic space
+        X_hyperbolic = self.to_hyperbolic(X)
         
-        # Compute
-        loss_pos = F.relu(angle_ap - self.tau + self.margin)
-        loss_neg = F.relu(self.tau + self.margin - angle_an)
+        # Create triplets: anchor, positive, negative
+        labels = y.contiguous().view(-1, 1)
+        class_eq_mask = torch.eq(labels, labels.T).float().to(device)
         
-        # Compute loss
-        loss = loss_pos.mean() + loss_neg.mean()
-        return loss
+        # Find positive and negative pairs
+        pos_mask = class_eq_mask
+        neg_mask = (1 - class_eq_mask)
+        
+        # Remove self-contrast
+        self_mask = torch.scatter(torch.ones_like(pos_mask), 1, torch.arange(batch_size).view(-1, 1).to(device), 0)
+        pos_mask = pos_mask * self_mask
+        
+        total_loss = 0.0
+        valid_triplets = 0
+        
+        for i in range(batch_size):
+            # Find positive samples (same class)
+            pos_indices = torch.where(pos_mask[i])[0]
+            # Find negative samples (different class)
+            neg_indices = torch.where(neg_mask[i])[0]
+            
+            if len(pos_indices) > 0 and len(neg_indices) > 0:
+                # Sample one positive and one negative
+                pos_idx = pos_indices[torch.randint(0, len(pos_indices), (1,))]
+                neg_idx = neg_indices[torch.randint(0, len(neg_indices), (1,))]
+                
+                anchor = X_hyperbolic[i:i+1]
+                positive = X_hyperbolic[pos_idx:pos_idx+1]
+                negative = X_hyperbolic[neg_idx:neg_idx+1]
+                
+                # Compute hyperbolic angles
+                angle_ap = self.hyperbolic_angle(anchor, positive)
+                angle_an = self.hyperbolic_angle(anchor, negative)
+                
+                # Compute loss
+                loss_pos = F.relu(angle_ap - self.tau + self.margin)
+                loss_neg = F.relu(self.tau + self.margin - angle_an)
+                
+                total_loss += (loss_pos.mean() + loss_neg.mean())
+                valid_triplets += 1
+        
+        if valid_triplets > 0:
+            return total_loss / valid_triplets
+        else:
+            return torch.tensor(0.0, device=device, requires_grad=True)
     
     
