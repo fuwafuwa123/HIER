@@ -53,9 +53,6 @@ parser.add_argument('--batch_size', default=90, type=int,
 
 parser.add_argument('--gpu_id', default=0, type=int, help='GPU ID to use')
 
-parser.add_argument('--metric', default='recall', type=str, choices=['recall', 'ndcg'],
-    help='Evaluation metric to use (recall or ndcg)')
-
 args = parser.parse_args()
 
 # Set device
@@ -358,13 +355,9 @@ with torch.no_grad():
     print("**Evaluating...**")
     
     # Use the evaluate function from helpers.py for all cases
-    print(f"Using {args.metric} evaluation with hyp_c={model_args.hyp_c}")
-    if args.metric == 'ndcg':
-        score = evaluate(get_emb_s, args.dataset, model_args.hyp_c, metric="ndcg")
-        print(f"Final NDCG@1: {score:.4f}")
-    else:
-        Recalls = evaluate(get_emb_s, args.dataset, model_args.hyp_c, metric="recall")
-        print(f"Final R@1: {Recalls:.4f}")
+    print(f"Using recall evaluation with hyp_c={model_args.hyp_c}")
+    Recalls = evaluate(get_emb_s, args.dataset, model_args.hyp_c)
+    print(f"Final R@1: {Recalls:.4f}")
     
     # For visualization, we can still use the cosine similarity approach
     if args.visualize:
