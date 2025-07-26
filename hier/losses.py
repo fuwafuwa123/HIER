@@ -363,8 +363,11 @@ class HyperbolicEntailmentConeLoss(torch.nn.Module):
         batch_size = X.shape[0]
         device = X.device
         
-        # Convert to hyperbolic space
-        X_hyperbolic = self.to_hyperbolic(X)
+    
+        if self.hyp_c > 0:
+            X_hyperbolic = X  # Already hyperbolic from model
+        else:
+            X_hyperbolic = self.to_hyperbolic(X)  # Convert to hyperbolic
         
         # Create triplets: anchor, positive, negative
         labels = y.contiguous().view(-1, 1)
