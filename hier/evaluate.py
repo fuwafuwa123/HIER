@@ -363,7 +363,7 @@ def visualize_query_gallery_comparison(model, query_index=0, top_k=5, save_path=
     for k in range(1, top_k + 1):
         dcg = calc_dcg(sorted_relevances, k)
         ndcg = dcg / idcg if idcg > 0 else 0.0
-        ndcg_scores.append(ndcg.item())
+        ndcg_scores.append(ndcg)
     
     # Get top-k indices based on similarity ranking
     top_k_indices = sorted_indices[:top_k]
