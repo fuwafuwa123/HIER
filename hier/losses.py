@@ -342,9 +342,20 @@ class HyperbolicEntailmentConeLoss(torch.nn.Module):
         self.to_hyperbolic = hypnn.ToPoincare(c=hyp_c, ball_dim=sz_embed, riemannian=True, clip_r=clip_r, train_c=False)
     
     def hyperbolic_angle(self, a, b):
+        # Compute angle between two vectors directly
         a_norm = F.normalize(a, p=2, dim=1)
-        b_proj = b - (b * a_norm).sum(dim=1, keepdim=True) * a_norm
-        angle = torch.acos(F.cosine_similarity(b_proj, a, dim=1))
+        b_norm = F.normalize(b, p=2, dim=1)
+        
+        # Compute cosine similarity
+        cos_sim = F.cosine_similarity(a_norm, b_norm, dim=1)
+        
+        # Clamp to avoid numerical issues
+        cos_sim = torch.clamp(cos_sim, -1.0 + 1e-6, 1.0 - 1e-6)
+        
+        # Compute angle
+        angle = torch.acos(cos_sim)
+        angle = torch.clamp(angle, 0.0, self.clip_r)
+        
         return angle
     
     def forward(self, X, y):
@@ -356,7 +367,7 @@ class HyperbolicEntailmentConeLoss(torch.nn.Module):
         device = X.device
         
         # Convert to hyperbolic space
-        X_hyperbolic = X
+        X_hyperbolic = self.to_hyperbolic(X)
         
         # Create triplets: anchor, positive, negative
         labels = y.contiguous().view(-1, 1)
