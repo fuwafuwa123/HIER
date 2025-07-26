@@ -268,7 +268,6 @@ if __name__ == "__main__":
     elif args.optimizer == "sgd":
         optimizer = torch.optim.SGD(params_groups, momentum=0.9, lr=args.lr)  # lr is set by scheduler
     
-        
     fp16_scaler = None
     if args.use_fp16:
         fp16_scaler = torch.cuda.amp.GradScaler()

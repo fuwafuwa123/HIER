@@ -343,8 +343,16 @@ class HyperbolicEntailmentConeLoss(torch.nn.Module):
     
     def hyperbolic_angle(self, a, b):
         a_norm = F.normalize(a, p=2, dim=1)
-        b_proj = b - (b * a_norm).sum(dim=1, keepdim=True) * a_norm
-        angle = torch.acos(F.cosine_similarity(b_proj, a, dim=1))
+        b_norm = F.normalize(b, p=2, dim=1)
+        
+        # Compute cosine similarity
+        cos_sim = F.cosine_similarity(a_norm, b_norm, dim=1)
+        
+        # Clamp to avoid numerical issues
+        cos_sim = torch.clamp(cos_sim, -1.0 + 1e-6, 1.0 - 1e-6)
+        
+        # Compute angle
+        angle = torch.acos(cos_sim)
         return angle
     
     def forward(self, X, y):
