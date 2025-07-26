@@ -332,7 +332,7 @@ class SupCon(torch.nn.Module):
 
 
 class HyperbolicEntailmentConeLoss(torch.nn.Module):
-    def __init__(self, sz_embed ,tau=0.1, margin=0.1, clip_r=2.3, hyp_c=0.1):
+    def __init__(self, sz_embed ,tau=0.5, margin=0.2, clip_r=2.3, hyp_c=0.1):
         super().__init__()
         self.tau = tau
         self.sz_embed = sz_embed
@@ -342,24 +342,10 @@ class HyperbolicEntailmentConeLoss(torch.nn.Module):
         self.to_hyperbolic = hypnn.ToPoincare(c=hyp_c, ball_dim=sz_embed, riemannian=True, clip_r=clip_r, train_c=False)
     
     def hyperbolic_angle(self, a, b):
-        a_norm = F.normalize(a, p=2, dim=1)
-        b_norm = F.normalize(b, p=2, dim=1)
-        
-        # Compute cosine similarity
-        cos_sim = F.cosine_similarity(a_norm, b_norm, dim=1)
-        
-        # Clamp to avoid numerical issues
-        cos_sim = torch.clamp(cos_sim, -1.0 + 1e-6, 1.0 - 1e-6)
-        
-        # Compute angle
-        angle = torch.acos(cos_sim)
-        return angle
+        dist = pmath.dist_matrix(a, b, c=self.hyp_c)
+        return dist.squeeze()
     
     def forward(self, X, y):
-        """
-        Wrapper to work with current training setup.
-        Creates triplets from batch data.
-        """
         batch_size = X.shape[0]
         device = X.device
         
@@ -399,13 +385,14 @@ class HyperbolicEntailmentConeLoss(torch.nn.Module):
                 positive = X_hyperbolic[pos_idx:pos_idx+1]
                 negative = X_hyperbolic[neg_idx:neg_idx+1]
                 
-                # Compute hyperbolic angles
-                angle_ap = self.hyperbolic_angle(anchor, positive)
-                angle_an = self.hyperbolic_angle(anchor, negative)
+                # Compute hyperbolic distances
+                dist_ap = self.hyperbolic_angle(anchor, positive)
+                dist_an = self.hyperbolic_angle(anchor, negative)
                 
-                # Compute loss
-                loss_pos = F.relu(angle_ap - self.tau + self.margin)
-                loss_neg = F.relu(self.tau + self.margin - angle_an)
+                # Compute loss using distances (smaller distance = more similar)
+                # Positive pairs should be closer than negative pairs
+                loss_pos = F.relu(dist_ap - self.tau + self.margin)
+                loss_neg = F.relu(self.tau + self.margin - dist_an)
                 
                 total_loss += (loss_pos.mean() + loss_neg.mean())
                 valid_triplets += 1
