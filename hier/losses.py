@@ -356,7 +356,7 @@ class HyperbolicEntailmentConeLoss(torch.nn.Module):
         device = X.device
         
         # Convert to hyperbolic space
-        X_hyperbolic = self.to_hyperbolic(X)
+        X_hyperbolic = X
         
         # Create triplets: anchor, positive, negative
         labels = y.contiguous().view(-1, 1)
