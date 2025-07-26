@@ -76,16 +76,6 @@ checkpoint = torch.load(args.resume, map_location=device, weights_only=False)
 # Extract model configuration from checkpoint
 if 'args' in checkpoint:
     checkpoint_args = checkpoint['args']
-    print("Loaded model configuration from checkpoint:")
-    print(f"  Model: {checkpoint_args.model}")
-    print(f"  Embedding dimension: {checkpoint_args.emb}")
-    print(f"  Hyperbolic curvature: {checkpoint_args.hyp_c}")
-    print(f"  Clip radius: {checkpoint_args.clip_r}")
-    print(f"  Use last norm: {checkpoint_args.use_lastnorm}")
-    print(f"  BN freeze: {checkpoint_args.bn_freeze}")
-    print(f"  Pool: {checkpoint_args.pool}")
-    print(f"  Patch size: {checkpoint_args.patch_size}")
-    
     # Use checkpoint args for model initialization
     model_args = checkpoint_args
 else:
@@ -108,23 +98,10 @@ else:
     
     model_args = DefaultArgs()
 
-# Initialize model with configuration from checkpoint
-print(f"Initializing model with configuration:")
-print(f"  Model type: {model_args.model}")
-print(f"  Embedding dimension: {model_args.emb}")
-print(f"  Hyperbolic curvature: {model_args.hyp_c}")
-print(f"  Use last norm: {model_args.use_lastnorm}")
-print(f"  BN freeze: {model_args.bn_freeze}")
+
 
 model = init_model(model_args)
 model = model.to(device)
-
-# Print model structure for debugging
-print(f"Model structure:")
-print(f"  Model type: {type(model)}")
-print(f"  Body type: {type(model.body)}")
-print(f"  Last layer type: {type(model.last_layer)}")
-print(f"  Total parameters: {sum(p.numel() for p in model.parameters())}")
 
 
 model.eval()
@@ -236,8 +213,8 @@ def find_top_k_similar(query_embedding, gallery_embeddings, k=5):
     
     return top_k_values, top_k_indices
 
-def visualize_top_k(query_image_path, top_k_image_paths, top_k_scores, query_label, top_k_labels, ndcg_scores, save_path=None):
-    """Visualize query image and top-k similar images with colored borders based on NDCG thresholds"""
+def visualize_top_k(query_image_path, top_k_image_paths, top_k_scores, query_label, top_k_labels, save_path=None):
+    """Visualize query image and top-k similar images with colored borders based on similarity and class"""
     total_images = 1 + len(top_k_image_paths)
     fig, axes = plt.subplots(1, total_images, figsize=(4*total_images, 4))
     
@@ -251,31 +228,43 @@ def visualize_top_k(query_image_path, top_k_image_paths, top_k_scores, query_lab
     axes[0].set_title('Query Image', fontsize=12)
     axes[0].axis('off')
     
-    # Load and display top-k similar images with colored borders based on NDCG
-    for i, (img_path, score, label, ndcg_score) in enumerate(zip(top_k_image_paths, top_k_scores, top_k_labels, ndcg_scores)):
+    # Load and display top-k similar images with colored borders based on similarity and class
+    for i, (img_path, score, label) in enumerate(zip(top_k_image_paths, top_k_scores, top_k_labels)):
         img = Image.open(img_path)
         axes[i+1].imshow(img)
         
-        # Determine border color based on NDCG threshold
-        if ndcg_score >= 0.7:  # High NDCG threshold for green
-            border_color = 'green'
-            
-        elif ndcg_score >= 0.3:  # Medium NDCG threshold for orange
-            border_color = 'orange'
-            
-        else:  # Low NDCG threshold for red
+        # Determine border color based on similarity and class
+        if query_label == label:
+            # Same class - use similarity to determine color
+            if model_args.hyp_c > 0:
+                # Hyperbolic: score is negative distance, closer to 0 = more similar
+                if score >= -0.1:  # Very close in hyperbolic space
+                    border_color = 'green'
+                elif score >= -0.5:  # Moderately close
+                    border_color = 'orange'
+                else:  # Far apart in hyperbolic space
+                    border_color = 'yellow'
+            else:
+                # Euclidean: score is cosine similarity, higher = more similar
+                if score >= 0.8:  # High similarity within same class
+                    border_color = 'green'
+                elif score >= 0.5:  # Medium similarity within same class
+                    border_color = 'orange'
+                else:  # Low similarity within same class (most dissimilar)
+                    border_color = 'yellow'
+        else:
+            # Different class
             border_color = 'red'
-    
         
-        # Add colored border
-        axes[i+1].set_title(f'Top {i+1}', fontsize=12, color=border_color)
+        axes[i+1].set_title(f'Top {i+1} (sim: {score:.3f}) Class: {label}', fontsize=12)
         axes[i+1].axis('off')
         
         # Add colored border around the image
         for spine in axes[i+1].spines.values():
             spine.set_edgecolor(border_color)
             spine.set_linewidth(3)
-    
+        
+
     plt.tight_layout()
     
     if save_path:
@@ -286,7 +275,7 @@ def visualize_top_k(query_image_path, top_k_image_paths, top_k_scores, query_lab
 
 
 def visualize_query_gallery_comparison(model, query_index=0, top_k=5, save_path=None):
-    """Visualize query vs gallery comparison using proper dataloaders with colored borders and NDCG-based ranking"""
+    """Visualize query vs gallery comparison using proper dataloaders with colored borders based on similarity"""
     print(f"Extracting embeddings using proper dataloaders...")
     
     # Use the appropriate dataloaders based on dataset
@@ -329,36 +318,11 @@ def visualize_query_gallery_comparison(model, query_index=0, top_k=5, save_path=
         gallery_emb_norm = F.normalize(gallery_emb, p=2, dim=1)
         sim = F.linear(query_embedding_norm, gallery_emb_norm)
     
-    # Calculate NDCG-based ranking
-    print(f"Calculating NDCG-based ranking...")
-    
     # Get all similarities for the query
     similarities = sim[0]  # Shape: [gallery_size]
     
-    # Create relevance scores (1 if same class, 0 otherwise)
-    relevances = (gallery_labels == query_label).float().to(similarities.device)
-    
     # Sort by similarity (descending) and get indices
     sorted_similarities, sorted_indices = torch.sort(similarities, descending=True)
-    sorted_relevances = relevances[sorted_indices]
-    
-    # Calculate DCG for the sorted list
-    def calc_dcg(relevances, k):
-        relevances = relevances[:k]
-        if len(relevances) == 0:
-            return 0.0
-        return torch.sum((2**relevances - 1) / torch.log2(torch.arange(2, len(relevances) + 2, device=relevances.device).float()))
-    
-    # Calculate ideal DCG (perfect ranking)
-    ideal_relevances = torch.sort(relevances, descending=True)[0]
-    idcg = calc_dcg(ideal_relevances, top_k)
-    
-    # Calculate NDCG for each position
-    ndcg_scores = []
-    for k in range(1, top_k + 1):
-        dcg = calc_dcg(sorted_relevances, k)
-        ndcg = dcg / idcg if idcg > 0 else 0.0
-        ndcg_scores.append(ndcg)
     
     # Get top-k indices based on similarity ranking
     top_k_indices = sorted_indices[:top_k]
@@ -374,17 +338,17 @@ def visualize_query_gallery_comparison(model, query_index=0, top_k=5, save_path=
             top_k_image_paths.append(f"Gallery_{idx}")
         top_k_labels.append(gallery_labels[idx])
     
-    # Print results with NDCG scores
-    print(f"\nTop {top_k} similar images from gallery (ranked by similarity, showing NDCG@k):")
-    for i, (idx, similarity, label, ndcg_at_k) in enumerate(zip(top_k_indices, top_k_similarities, top_k_labels, ndcg_scores)):
+    # Print results
+    print(f"\nTop {top_k} similar images from gallery (ranked by similarity):")
+    for i, (idx, similarity, label) in enumerate(zip(top_k_indices, top_k_similarities, top_k_labels)):
         img_path = top_k_image_paths[i]
         print(f"  {i+1}. Gallery Image {idx}: {img_path}")
-        print(f"     Label: {label}, Similarity: {similarity:.3f}, NDCG@{i+1}: {ndcg_at_k:.3f}")
+        print(f"     Label: {label}, Similarity: {similarity:.3f}")
     
     # Visualize results
     if query_paths and gallery_paths and all(os.path.exists(path) for path in [query_image_path] + top_k_image_paths):
         print("\nGenerating visualization...")
-        visualize_top_k(query_image_path, top_k_image_paths, top_k_similarities, query_label, top_k_labels, ndcg_scores, save_path)
+        visualize_top_k(query_image_path, top_k_image_paths, top_k_similarities, query_label, top_k_labels, save_path)
     else:
         print("\nCannot visualize: Some image paths are not valid or images don't exist")
 
