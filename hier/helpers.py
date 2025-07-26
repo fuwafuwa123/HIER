@@ -17,7 +17,7 @@ class MultiSample:
     def __call__(self, x):
         return tuple(self.transform(x) for _ in range(self.num))
 
-def evaluate(get_emb_f, ds_name, hyp_c, metric="recall"):
+def evaluate(get_emb_f, ds_name, hyp_c):
     """
     Evaluate embeddings using specified metric.
     Args:
@@ -26,25 +26,16 @@ def evaluate(get_emb_f, ds_name, hyp_c, metric="recall"):
         hyp_c: Hyperbolic curvature
         metric: Evaluation metric ("recall" or "ndcg")
     """
-    if metric == "ndcg":
-        if ds_name != "Inshop":
-            emb_head = get_emb_f(ds_type="eval")
-            ndcg_score = get_ndcg(emb_head[0], emb_head[1], emb_head[2], emb_head[0], emb_head[1], emb_head[2], ds_name, hyp_c)
-        else:
-            emb_head_query = get_emb_f(ds_type="query")
-            emb_head_gal = get_emb_f(ds_type="gallery")
-            ndcg_score = get_ndcg(emb_head_query[0], emb_head_query[1], emb_head_query[2], emb_head_gal[0], emb_head_gal[1], emb_head_gal[2], ds_name, hyp_c)
-        return ndcg_score
+  
+    # Original recall evaluation
+    if ds_name != "Inshop":
+        emb_head = get_emb_f(ds_type="eval")
+        recall_head = get_recall(emb_head[0], emb_head[1], emb_head[2], emb_head[0], emb_head[1], emb_head[2], ds_name, hyp_c)
     else:
-        # Original recall evaluation
-        if ds_name != "Inshop":
-            emb_head = get_emb_f(ds_type="eval")
-            recall_head = get_recall(emb_head[0], emb_head[1], emb_head[2], emb_head[0], emb_head[1], emb_head[2], ds_name, hyp_c)
-        else:
-            emb_head_query = get_emb_f(ds_type="query")
-            emb_head_gal = get_emb_f(ds_type="gallery")
-            recall_head = get_recall(emb_head_query[0], emb_head_query[1], emb_head_query[2], emb_head_gal[0], emb_head_gal[1], emb_head_gal[2], ds_name, hyp_c)
-        return recall_head
+        emb_head_query = get_emb_f(ds_type="query")
+        emb_head_gal = get_emb_f(ds_type="gallery")
+        recall_head = get_recall(emb_head_query[0], emb_head_query[1], emb_head_query[2], emb_head_gal[0], emb_head_gal[1], emb_head_gal[2], ds_name, hyp_c)
+    return recall_head
 
 
 def calc_recall_at_k(T, Y, k):

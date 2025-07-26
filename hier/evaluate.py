@@ -236,19 +236,19 @@ def visualize_top_k(query_image_path, top_k_image_paths, top_k_scores, query_lab
         # Determine border color based on similarity and class
         if query_label == label:
             # Same class - use similarity to determine color
-            if model_args.hyp_c > 0:
+            if hyp_c > 0:
                 # Hyperbolic: score is negative distance, closer to 0 = more similar
-                if score >= -0.1:  # Very close in hyperbolic space
+                if score >= -0.2:  # Very close in hyperbolic space
                     border_color = 'green'
-                elif score >= -0.5:  # Moderately close
+                elif score >= -1.0:  # Moderately close
                     border_color = 'orange'
                 else:  # Far apart in hyperbolic space
                     border_color = 'yellow'
             else:
                 # Euclidean: score is cosine similarity, higher = more similar
-                if score >= 0.8:  # High similarity within same class
+                if score >= 0.6:  # High similarity within same class
                     border_color = 'green'
-                elif score >= 0.5:  # Medium similarity within same class
+                elif score >= 0.3:  # Medium similarity within same class
                     border_color = 'orange'
                 else:  # Low similarity within same class (most dissimilar)
                     border_color = 'yellow'
@@ -256,7 +256,7 @@ def visualize_top_k(query_image_path, top_k_image_paths, top_k_scores, query_lab
             # Different class
             border_color = 'red'
         
-        axes[i+1].set_title(f'Top {i+1} (sim: {score:.3f}) Class: {label}', fontsize=12)
+        axes[i+1].set_title(f'Top {i+1} Class: {label}', fontsize=12, color=border_color)
         axes[i+1].axis('off')
         
         # Add colored border around the image
