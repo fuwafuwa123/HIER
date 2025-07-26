@@ -342,7 +342,12 @@ class HyperbolicEntailmentConeLoss(torch.nn.Module):
         self.to_hyperbolic = hypnn.ToPoincare(c=hyp_c, ball_dim=sz_embed, riemannian=True, clip_r=clip_r, train_c=False)
     
     def hyperbolic_angle(self, a, b):
+        """
+        Compute hyperbolic distance with gradient clipping for stability
+        """
         dist = pmath.dist_matrix(a, b, c=self.hyp_c)
+        # Use clip_r to prevent gradient explosion (clip_r is the radius limit)
+        dist = torch.clamp(dist, 0.0, self.clip_r)
         return dist.squeeze()
     
     def forward(self, X, y):
