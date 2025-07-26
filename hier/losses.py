@@ -332,7 +332,7 @@ class SupCon(torch.nn.Module):
 
 
 class HyperbolicEntailmentConeLoss(torch.nn.Module):
-    def __init__(self, sz_embed ,tau=0.5, margin=0.2, clip_r=2.3, hyp_c=0.1):
+    def __init__(self, sz_embed, tau=0.5, margin=0.2, clip_r=2.3, hyp_c=0.1):
         super().__init__()
         self.tau = tau
         self.sz_embed = sz_embed
@@ -343,11 +343,9 @@ class HyperbolicEntailmentConeLoss(torch.nn.Module):
     
     def hyperbolic_angle(self, a, b):
         """
-        Compute hyperbolic distance with gradient clipping for stability
+        Compute hyperbolic distance - don't clip to allow learning
         """
         dist = pmath.dist_matrix(a, b, c=self.hyp_c)
-        # Use clip_r to prevent gradient explosion (clip_r is the radius limit)
-        dist = torch.clamp(dist, 0.0, self.clip_r)
         return dist.squeeze()
     
     def forward(self, X, y):
