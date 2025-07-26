@@ -233,7 +233,7 @@ def visualize_top_k(query_image_path, top_k_image_paths, top_k_scores, query_lab
         # Determine border color based on similarity and class
         if query_label == label:
             # Same class - use similarity to determine color
-            if hyp_c > 0:
+            if model_args.hyp_c > 0:
                 # Hyperbolic: score is negative distance, closer to 0 = more similar
                 if score >= -0.2:  # Very close in hyperbolic space
                     border_color = 'green'
