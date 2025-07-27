@@ -392,9 +392,9 @@ class HyperbolicEntailmentConeLoss(torch.nn.Module):
                 pos_idx = pos_indices[torch.randint(0, len(pos_indices), (1,))]
                 neg_idx = neg_indices[torch.randint(0, len(neg_indices), (1,))]
                 
-                anchor = X_hyperbolic[i:i+1]
-                positive = X_hyperbolic[pos_idx:pos_idx+1]
-                negative = X_hyperbolic[neg_idx:neg_idx+1]
+                anchor = X[i:i+1]
+                positive = X[pos_idx:pos_idx+1]
+                negative = X[neg_idx:neg_idx+1]
                 
                 # Compute hyperbolic angles
                 angle_ap = self.hyperbolic_angle(anchor, positive)
