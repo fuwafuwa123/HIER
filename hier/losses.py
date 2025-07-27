@@ -333,14 +333,16 @@ class SupCon(torch.nn.Module):
 
 
 class HyperbolicEntailmentConeLoss(nn.Module):
-    def __init__(self, sz_embed, tau=0.1, margin=0.1, clip_r=2.3, hyp_c=0.1):
+    def __init__(self, sz_embed, tau=0.1, margin=0.1, clip_r=2.3, hyp_c=0.1, alpha=2, beta=50):
         super().__init__()
         self.tau = tau
         self.sz_embed = sz_embed
         self.margin = margin
         self.clip_r = clip_r
         self.hyp_c = hyp_c
-
+        self.alpha = alpha
+        self.beta = beta
+        
         self.to_hyperbolic = hypnn.ToPoincare(
             c=hyp_c,
             ball_dim=sz_embed,
