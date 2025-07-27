@@ -331,85 +331,88 @@ class SupCon(torch.nn.Module):
         return loss
 
 
-class HyperbolicEntailmentConeLoss(torch.nn.Module):
-    def __init__(self, sz_embed ,tau=0.1, margin=0.1, clip_r=2.3, hyp_c=0.1):
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import geoopt.manifolds.poincare.math as pmath
+import geoopt.layers as hypnn
+
+class HyperbolicEntailmentConeLoss(nn.Module):
+    def __init__(self, sz_embed, tau=0.1, margin=0.1, clip_r=2.3, hyp_c=0.1):
         super().__init__()
         self.tau = tau
         self.sz_embed = sz_embed
         self.margin = margin
         self.clip_r = clip_r
         self.hyp_c = hyp_c
-        self.to_hyperbolic = hypnn.ToPoincare(c=hyp_c, ball_dim=sz_embed, riemannian=True, clip_r=clip_r, train_c=False)
-    
+
+        self.to_hyperbolic = hypnn.ToPoincare(
+            c=hyp_c,
+            ball_dim=sz_embed,
+            riemannian=True,
+            clip_r=clip_r,
+            train_c=False
+        )
+
     def hyperbolic_angle(self, a, b):
-        # Compute angle between two vectors directly
         a_norm = F.normalize(a, p=2, dim=1)
         b_norm = F.normalize(b, p=2, dim=1)
-        
-        # Compute cosine similarity
+
         cos_sim = F.cosine_similarity(a_norm, b_norm, dim=1)
-        
-        # Clamp to avoid numerical issues
         cos_sim = torch.clamp(cos_sim, -1.0 + 1e-6, 1.0 - 1e-6)
-        
-        # Compute angle
+
         angle = torch.acos(cos_sim)
-        
         return angle
-    
+
     def forward(self, X, y):
         """
-        Wrapper to work with current training setup.
-        Creates triplets from batch data.
+        X: Euclidean embeddings (batch_size, sz_embed)
+        y: labels (batch_size,)
         """
-        batch_size = X.shape[0]
         device = X.device
-        
-        # X is already hyperbolic if hyp_c > 0 (from model)
-        # No need to convert again
-        X_hyperbolic = X
-        
-        # Create triplets: anchor, positive, negative
+        batch_size = X.shape[0]
+
+        # Normalize and map to hyperbolic space
+        X_norm = F.normalize(X, p=2, dim=1)
+        X_hyp = self.to_hyperbolic(X_norm)
+
+        # Compute pairwise label masks
         labels = y.contiguous().view(-1, 1)
         class_eq_mask = torch.eq(labels, labels.T).float().to(device)
-        
-        # Find positive and negative pairs
-        pos_mask = class_eq_mask
-        neg_mask = (1 - class_eq_mask)
-        
-        # Remove self-contrast
-        self_mask = torch.scatter(torch.ones_like(pos_mask), 1, torch.arange(batch_size).view(-1, 1).to(device), 0)
-        pos_mask = pos_mask * self_mask
-        
+        self_mask = torch.eye(batch_size, device=device)
+        pos_mask = class_eq_mask - self_mask
+        neg_mask = 1.0 - class_eq_mask
+
         total_loss = 0.0
         valid_triplets = 0
-        
+
         for i in range(batch_size):
-            # Find positive samples (same class)
-            pos_indices = torch.where(pos_mask[i])[0]
-            # Find negative samples (different class)
-            neg_indices = torch.where(neg_mask[i])[0]
-            
-            if len(pos_indices) > 0 and len(neg_indices) > 0:
-                # Sample one positive and one negative
-                pos_idx = pos_indices[torch.randint(0, len(pos_indices), (1,))]
-                neg_idx = neg_indices[torch.randint(0, len(neg_indices), (1,))]
-                
-                anchor = X_hyperbolic[i:i+1]
-                positive = X_hyperbolic[pos_idx:pos_idx+1]
-                negative = X_hyperbolic[neg_idx:neg_idx+1]
-                
-                # Compute hyperbolic angles
-                angle_ap = self.hyperbolic_angle(anchor, positive)
-                angle_an = self.hyperbolic_angle(anchor, negative)
-                
-                # Compute loss
-                loss_pos = F.relu(angle_ap - self.tau + self.margin)
-                loss_neg = F.relu(self.tau + self.margin - angle_an)
-                
-                total_loss += (loss_pos.mean() + loss_neg.mean())
-                valid_triplets += 1
-        
+            pos_indices = torch.where(pos_mask[i] > 0)[0]
+            neg_indices = torch.where(neg_mask[i] > 0)[0]
+
+            if len(pos_indices) == 0 or len(neg_indices) == 0:
+                continue
+
+            pos_idx = pos_indices[torch.randint(0, len(pos_indices), (1,))]
+            neg_idx = neg_indices[torch.randint(0, len(neg_indices), (1,))]
+
+            anchor = X_hyp[i:i+1]
+            positive = X_hyp[pos_idx]
+            negative = X_hyp[neg_idx]
+
+            angle_ap = self.hyperbolic_angle(anchor, positive)
+            angle_an = self.hyperbolic_angle(anchor, negative)
+
+            # Clamp angles to avoid numerical instability
+            angle_ap = torch.clamp(angle_ap, 1e-3, 3.14 - 1e-3)
+            angle_an = torch.clamp(angle_an, 1e-3, 3.14 - 1e-3)
+
+            # Triplet loss
+            loss = F.relu(angle_ap - angle_an + self.margin)
+            total_loss += loss
+            valid_triplets += 1
+
+        if valid_triplets == 0:
+            return torch.tensor(0.0, device=device, requires_grad=True)
 
         return total_loss / valid_triplets
-    
