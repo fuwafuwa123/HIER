@@ -354,7 +354,6 @@ class HyperbolicEntailmentConeLoss(torch.nn.Module):
         
         # Compute angle
         angle = torch.acos(cos_sim)
-        angle = torch.clamp(angle, 0.0, self.clip_r)
         
         return angle
     
@@ -365,9 +364,7 @@ class HyperbolicEntailmentConeLoss(torch.nn.Module):
         """
         batch_size = X.shape[0]
         device = X.device
-        
-        # Convert to hyperbolic space
-        X_hyperbolic = self.to_hyperbolic(X)
+    
         
         # Create triplets: anchor, positive, negative
         labels = y.contiguous().view(-1, 1)
