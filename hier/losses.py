@@ -389,15 +389,20 @@ class HyperbolicEntailmentConeLoss(nn.Module):
             pos_angles = self.hyperbolic_angle(anchor.repeat(len(pos_indices),1), X_hyp[pos_indices])
             neg_angles = self.hyperbolic_angle(anchor.repeat(len(neg_indices),1), X_hyp[neg_indices])
 
-            # Tính weight adaptive
-            w_pos = torch.exp(self.alpha * pos_angles)     # alpha>0, weight tăng với góc positive
-            w_neg = torch.exp(-self.beta * neg_angles)     # beta>0, weight tăng khi góc negative nhỏ
+            # Tính weight adaptive (clamp để tránh explosion)
+            w_pos = torch.clamp(torch.exp(self.alpha * pos_angles), 0.1, 10.0)
+            w_neg = torch.clamp(torch.exp(-self.beta * neg_angles), 0.1, 10.0)
 
             # Tạo tất cả cặp triplet (pos, neg)
             for j, pos_idx in enumerate(pos_indices):
                 for k, neg_idx in enumerate(neg_indices):
                     angle_ap = pos_angles[j]
                     angle_an = neg_angles[k]
+                    
+                    # Ensure angles are valid
+                    angle_ap = torch.clamp(angle_ap, 1e-3, 3.14 - 1e-3)
+                    angle_an = torch.clamp(angle_an, 1e-3, 3.14 - 1e-3)
+                    
                     loss = F.relu(angle_ap - angle_an + self.margin)
                     weight = w_pos[j] * w_neg[k]
                     total_loss += loss * weight
