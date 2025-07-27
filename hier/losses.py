@@ -401,14 +401,15 @@ class HyperbolicEntailmentConeLoss(nn.Module):
             angle_ap = torch.clamp(angle_ap, 1e-3, 3.14 - 1e-3)
             angle_an = torch.clamp(angle_an, 1e-3, 3.14 - 1e-3)
 
-            # Adaptive weighting
-            w_pos = torch.exp(self.alpha * angle_ap)
-            w_neg = torch.exp(-self.beta * angle_an)
-
-            # Compute losses
+        
             losses = F.relu(angle_ap.unsqueeze(1) - angle_an.unsqueeze(0) + self.margin)
+            
+            # Add adaptive weighting (clamped to prevent explosion)
+            w_pos = torch.clamp(torch.exp(self.alpha * angle_ap), 0.1, 10.0)
+            w_neg = torch.clamp(torch.exp(-self.beta * angle_an), 0.1, 10.0)
+            
             weighted_losses = w_pos.unsqueeze(1) * w_neg.unsqueeze(0) * losses
-
+            
             total_loss += weighted_losses.mean()
             valid_count += 1
 
