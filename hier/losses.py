@@ -331,11 +331,6 @@ class SupCon(torch.nn.Module):
         return loss
 
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import geoopt.manifolds.poincare.math as pmath
-import geoopt.layers as hypnn
 
 class HyperbolicEntailmentConeLoss(nn.Module):
     def __init__(self, sz_embed, tau=0.1, margin=0.1, clip_r=2.3, hyp_c=0.1):
